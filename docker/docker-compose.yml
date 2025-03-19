@@ -1,0 +1,100 @@
+
+services:
+  rabbitmq:
+    image: "rabbitmq:4.0-management"
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+
+  minio:
+    image: "minio/minio"
+    container_name: minio
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
+  cockroachdb:
+    image: cockroachdb/cockroach:v23.1.11
+    container_name: cockroachdb
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257"
+      - "8081:8080"
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "cockroach", "node", "status", "--insecure"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth:
+    image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:main
+    container_name: auth
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    environment:
+      DATABASE_URL : ${COCKROACHDB_URL}
+      MAILER_EMAIL : ${MAILER_EMAIL}
+      MAILER_PASSWORD : ${MAILER_PASSWORD}
+      FRONTEND_URL : ${FRONTEND_URL}
+      HTTP_PORT : ${AUTH_HTTP_PORT}
+      GRPC_PORT : ${AUTH_GRPC_PORT}
+
+  runner_controller:
+    image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:main
+    container_name: runner_controller
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      minio:
+        condition: service_started
+    ports:
+      - "5002:5002"
+    environment:
+      DATABASE_URL : ${COCKROACHDB_URL}
+      MINIO_ENDPOINT : ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY_ID : ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
+      RABBITMQ_URL : ${RABBITMQ_URL}
+      FRONTEND_URL : ${FRONTEND_URL}
+      HTTP_PORT : ${RUNNER_CONTROLLER_HTTP_PORT}
+      AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
+
+  runner:
+    image: ghcr.io/evolutionary-algorithms-on-click/runner:main
+    container_name: runner
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      minio:
+        condition: service_started
+    environment:
+      COCKROACHDB_URL : ${COCKROACHDB_URL}
+      MINIO_URL : ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY : ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
+      RABBITMQ_URL : ${RABBITMQ_URL}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
+
+volumes:
+  minio-data:
+  cockroach-data:

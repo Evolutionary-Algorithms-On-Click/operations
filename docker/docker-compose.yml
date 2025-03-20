@@ -87,6 +87,8 @@ services:
         condition: service_started
       minio:
         condition: service_started
+      runner_controller:
+        condition: service_started
     environment:
       COCKROACHDB_URL : ${COCKROACHDB_URL}
       MINIO_URL : ${MINIO_ENDPOINT}

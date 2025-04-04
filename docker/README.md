@@ -1,8 +1,8 @@
 # STEPS TO RUN
 
-1. Make sure you have docker in your system.
+1. Make sure you have `docker` in your system.
 
-2. Get the [`docker-compose.yml`](./docker-compose.yml) file. 
+2. Get the [`docker-compose.yml`](./docker-compose.yml) file.
 
 3. Create a `.env` file in the same folder.
 
@@ -27,6 +27,13 @@ AUTH_GRPC_PORT = 5001
 
 RUNNER_CONTROLLER_HTTP_PORT = 5002
 AUTH_GRPC_ADDRESS = host.docker.internal:5001
+
+NEXT_PUBLIC_BACKEND_BASE_URL=http://localhost:5002
+NEXT_PUBLIC_AUTH_BASE_URL=http://localhost:5000
+NEXT_PUBLIC_MINIO_BASE_URL=http://localhost:9000
+# Set to true and paste token if you want to use AI features.
+NEXT_PUBLIC_AI=false
+GOOGLE_GENERATIVE_AI_API_KEY=<gemini-api-key>
 ```
 
 5. Run docker compose to start all containers

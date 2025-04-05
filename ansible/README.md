@@ -7,11 +7,14 @@
 
 # Configure Hosts
 
-In the inventory file, specify the target server's IP address or hostname under the `[myhosts]` group.
+In the inventory file, specify the target server's IP address or hostname under the `[master]` and `[worker]` group.
 
 ```ini
-[myhosts]
+[master]
 user1@ip1
+user4@ip4
+
+[worker]
 user2@ip2
 user3@ip3
 ```

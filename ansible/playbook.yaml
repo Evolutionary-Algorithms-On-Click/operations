@@ -1,0 +1,12 @@
+---
+- name: Deploy EvOC
+  hosts: myhosts
+  become: true
+  tasks:
+      - name: Ping hosts
+        ansible.builtin.ping:
+
+      - name: Update and upgrade apt packages
+        ansible.builtin.apt:
+            update_cache: true
+            upgrade: true

@@ -97,6 +97,31 @@ services:
       RABBITMQ_URL : ${RABBITMQ_URL}
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
 
+  evolve_frontend:
+    image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:main
+    container_name: evolve_frontend
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      minio:
+        condition: service_started
+      auth:
+        condition: service_started
+      runner_controller:
+        condition: service_started
+      runner:
+        condition: service_started
+    environment:
+      - NEXT_PUBLIC_BACKEND_BASE_URL=${NEXT_PUBLIC_BACKEND_BASE_URL}
+      - NEXT_PUBLIC_AUTH_BASE_URL=${NEXT_PUBLIC_AUTH_BASE_URL}
+      - NEXT_PUBLIC_MINIO_BASE_URL=${NEXT_PUBLIC_MINIO_BASE_URL}
+      - NEXT_PUBLIC_AI=${NEXT_PUBLIC_AI}
+      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
+    ports:
+      - "3000:3000"
+
 volumes:
   minio-data:
   cockroach-data:

@@ -1,0 +1,36 @@
+[Unit]
+Description=CockroachDB Node
+Requires=network.target
+After=network.target
+
+[Service]
+Type=notify
+WorkingDirectory=/var/lib/cockroach
+User=cockroach
+Group=cockroach
+LimitNOFILE=1048576
+
+# Construct the --join string dynamically listing all nodes in the group
+{% set join_list = [] %}
+{% for host in groups['cockroachdb'] %}
+{%   set _ = join_list.append( (hostvars[host].ansible_host | default(host)) ~ ':26257' ) %}
+{% endfor %}
+{% set join_string = join_list | join(',') %}
+
+ExecStart=/usr/local/bin/cockroach start \
+    --insecure \
+    --store=/var/lib/cockroach \
+    --listen-addr={{ ansible_host }}:26257 \
+    --http-addr={{ ansible_host }}:8080 \
+    --pid-file=/var/run/cockroach/cockroach.pid \
+    --join={{ join_string }}
+
+TimeoutStopSec=60
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=cockroach
+
+[Install]
+WantedBy=multi-user.target

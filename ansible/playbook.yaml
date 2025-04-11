@@ -118,36 +118,208 @@
             path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
             state: absent
 
-# TODO(@Abhinav-ark): Install kubeadm, kubelet. Below tasks need em.
+- name: Install and Configure CockroachDB Cluster
+  hosts: cockroachdb
+  become: true
+  vars:
+      crdb_version: "v25.1.0"
+      crdb_binary_url: "https://binaries.cockroachdb.com/cockroach-{{ crdb_version }}.linux-amd64.tgz"
+      crdb_install_dir: "/usr/local/bin"
+      crdb_data_dir: "/var/lib/cockroach"
+      crdb_run_dir: "/var/run/cockroach"
+      crdb_download_dest: "/tmp/cockroach-{{ crdb_version }}.linux-amd64.tgz"
+      crdb_extract_dest: "/tmp"
+      crdb_extracted_path: "/tmp/cockroach-{{ crdb_version }}.linux-amd64/cockroach"
+      crdb_user: cockroach
+      crdb_group: cockroach
 
-# - name: Kubernetes master setup.
-#   hosts: master
-#   become: true
-#   tasks:
-#       - name: Init kubectl master
-#         ansible.builtin.command:
-#             cmd: kubeadm init --pod-network-cidr=10.244.0.0/16
-#         register: kubeadm_output
-#         changed_when: kubeadm_output.rc != 0
+  tasks:
+      - name: Ensure cockroach group exists
+        ansible.builtin.group:
+            name: "{{ crdb_group }}"
+            state: present
+            system: true
 
-#       - name: Setup kubectl for current user
-#         ansible.builtin.command:
-#             cmd: "{{ item }}"
-#         loop:
-#             - mkdir -p $HOME/.kube
-#             - sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-#             - sudo chown $(id -u):$(id -g) $HOME/.kube/config
-#         register: kubectl_setup
-#         when: kubeadm_output is not failed
-#         changed_when: kubectl_setup.rc != 0
+      - name: Ensure cockroach user exists
+        ansible.builtin.user:
+            name: "{{ crdb_user }}"
+            group: "{{ crdb_group }}"
+            home: "{{ crdb_data_dir }}"
+            shell: /sbin/nologin
+            system: true
+            create_home: false
+            state: present
 
-# - name: Kubernetes workers setup.
-#   hosts: workers
-#   become: true
-#   tasks:
-#       - name: Join worker nodes to the cluster
-#         ansible.builtin.command:
-#             cmd: "{{ hostvars['master']['kubeadm_output']['stdout_lines'][0] }}"
-#         when: hostvars['master']['kubeadm_output'] is not failed
-#         register: join_output
-#         changed_when: join_output.rc != 0
+      - name: Install chrony NTP client
+        ansible.builtin.package:
+            name: chrony
+            state: present
+        register: chrony_install_result
+
+      - name: Configure chrony to use Google NTP servers
+        ansible.builtin.blockinfile:
+            path: /etc/chrony/chrony.conf
+            block: |
+                # Google Public NTP Servers
+                server time1.google.com iburst prefer
+                server time2.google.com iburst
+                server time3.google.com iburst
+                server time4.google.com iburst
+            marker: "# {mark} ANSIBLE MANAGED BLOCK - Google NTP"
+            state: present
+        notify: Restart chrony
+        when: chrony_install_result is success
+
+      - name: Ensure chrony service is running and enabled
+        ansible.builtin.service:
+            name: chrony
+            state: started
+            enabled: true
+        when: chrony_install_result is success
+
+      - name: Ensure target directories exist
+        ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ crdb_user }}"
+            group: "{{ crdb_group }}"
+            mode: "0700"
+        loop:
+            - "{{ crdb_data_dir }}"
+
+      - name: Check if CockroachDB binary already exists
+        ansible.builtin.stat:
+            path: "{{ crdb_install_dir }}/cockroach"
+        register: cockroach_binary_stat
+
+      - name: Ensure runtime directory exists
+        ansible.builtin.file:
+            path: "{{ crdb_run_dir }}"
+            state: directory
+            owner: "{{ crdb_user }}"
+            group: "{{ crdb_group }}"
+            mode: "0755"
+
+      - name: Download CockroachDB binary archive
+        ansible.builtin.get_url:
+            url: "{{ crdb_binary_url }}"
+            dest: "{{ crdb_download_dest }}"
+            mode: "0644"
+        when: not cockroach_binary_stat.stat.exists
+
+      - name: Extract CockroachDB archive
+        ansible.builtin.unarchive:
+            src: "{{ crdb_download_dest }}"
+            dest: "{{ crdb_extract_dest }}"
+            remote_src: true
+            creates: "{{ crdb_extracted_path }}"
+
+        when:
+            - not ansible_check_mode
+            - not cockroach_binary_stat.stat.exists
+
+      - name: Stat extracted binary path
+        ansible.builtin.stat:
+            path: "{{ crdb_extracted_path }}"
+        register: crdb_extracted_stat
+        when: not cockroach_binary_stat.stat.exists
+
+      - name: Copy CockroachDB binary to install directory
+        ansible.builtin.copy:
+            src: "{{ crdb_extracted_path }}"
+            dest: "{{ crdb_install_dir }}/cockroach"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0755"
+        when:
+            - not cockroach_binary_stat.stat.exists
+            - crdb_extracted_stat.stat is defined and crdb_extracted_stat.stat.exists
+        notify:
+            - Reload systemd
+
+      - name: Clean up downloaded archive and extracted files
+        ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+        loop:
+            - "{{ crdb_download_dest }}"
+            - "/tmp/cockroach-{{ crdb_version }}.linux-amd64"
+        when: not ansible_check_mode
+
+      - name: Template CockroachDB systemd service file
+        ansible.builtin.template:
+            src: templates/cockroachdb.service.j2
+            dest: /etc/systemd/system/cockroachdb.service
+            owner: root
+            group: root
+            mode: "0644"
+        notify:
+            - Reload systemd
+            - Restart cockroachdb
+
+      - name: Ensure CockroachDB service is enabled and started
+        ansible.builtin.systemd:
+            name: cockroachdb
+            enabled: true
+            state: started
+            daemon_reload: true
+
+  handlers:
+      - name: Reload systemd
+        ansible.builtin.systemd:
+            daemon_reload: true
+
+      - name: Restart cockroachdb
+        ansible.builtin.systemd:
+            name: cockroachdb
+            state: restarted
+
+      - name: Restart chrony
+        ansible.builtin.service:
+            name: chrony
+            state: restarted
+            enabled: true
+
+- name: Initialize the CockroachDB Cluster
+  hosts: cockroachdb[0]
+  become: true
+  gather_facts: false
+
+  tasks:
+      - name: Initialize the cluster (runs only once)
+        ansible.builtin.command:
+            cmd: "{{ crdb_install_dir }}/cockroach init --insecure --host={{ ansible_host }}:26257 -v"
+        register: init_result
+        changed_when: init_result.rc == 0
+        failed_when: init_result.rc != 0 and 'cluster has already been initialized' not in init_result.stderr
+        vars:
+            crdb_install_dir: "/usr/local/bin"
+        delay: 10
+        retries: 3
+        until: init_result is success or 'cluster has already been initialized' in init_result.stderr
+
+      - name: Display initialization result
+        ansible.builtin.debug:
+            var: init_result
+            verbosity: 1
+
+- name: Apply CockroachDB Enterprise License (Plain Text File - Insecure)
+  hosts: cockroachdb[0]
+  become: false
+  gather_facts: false
+  vars_files:
+      - vars/crdb_secrets.yml
+
+  vars:
+      crdb_install_dir: "/usr/local/bin"
+
+  tasks:
+      - name: Set CockroachDB enterprise license key
+        ansible.builtin.command:
+            cmd: >-
+                {{ crdb_install_dir }}/cockroach sql
+                --execute="SET CLUSTER SETTING enterprise.license = '{{ crdb_enterprise_license_key }}';"
+                --host={{ ansible_host }}:26257 --insecure
+        register: set_license_result
+        changed_when: "'cluster setting updated' in set_license_result.stdout"

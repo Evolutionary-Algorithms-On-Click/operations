@@ -2,5 +2,5 @@
 .ansible
 .vscode
 .DS_Store
-ansible/vars/crdb_secrets.yml
+ansible/vars/
 ansible/hosts.ini

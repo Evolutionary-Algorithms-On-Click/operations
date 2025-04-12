@@ -323,3 +323,107 @@
                 --host={{ ansible_host }}:26257 --insecure
         register: set_license_result
         changed_when: "'cluster setting updated' in set_license_result.stdout"
+
+- name: Install and Configure MinIO (Single Node Single Drive)
+  hosts: minio
+  become: true
+  vars_files:
+      - vars/minio_secrets.yml
+  vars:
+      # --- MinIO Configuration ---
+      minio_user: "minio-user"
+      minio_group: "minio-user"
+      minio_home_dir: "/var/local/minio"
+      minio_install_dir: "/usr/local/bin"
+      minio_config_dir: "/etc/minio"
+      minio_env_file_path: "/etc/default/minio"
+      minio_binary_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
+      minio_limit_nofile: 1048576
+      minio_console_port: 9001
+      # --- Define ONE data directory ---
+      # IMPORTANT: Separate storage (mounted here) is still recommended for performance/reliability.
+      # If this path is on the root drive, MinIO *might* still fail without MINIO_CI_CD=true workaround.
+      minio_data_dir: "/mnt/minio-data"
+
+  tasks:
+      - name: Ensure MinIO group exists
+        ansible.builtin.group:
+            name: "{{ minio_group }}"
+            state: present
+            system: true
+
+      - name: Ensure MinIO user exists
+        ansible.builtin.user:
+            name: "{{ minio_user }}"
+            group: "{{ minio_group }}"
+            home: "{{ minio_home_dir }}"
+            shell: /sbin/nologin
+            system: true
+            create_home: true
+            state: present
+
+      - name: Ensure MinIO data directory exists (including parents) and has correct permissions
+        ansible.builtin.file:
+            path: "{{ minio_data_dir }}"
+            state: directory
+            owner: "{{ minio_user }}"
+            group: "{{ minio_group }}"
+            mode: "0750"
+
+      - name: Ensure MinIO config directory exists
+        ansible.builtin.file:
+            path: "{{ minio_config_dir }}"
+            state: directory
+            owner: root
+            group: "{{ minio_group }}"
+            mode: "0750"
+
+      - name: Check if MinIO binary already exists
+        ansible.builtin.stat:
+            path: "{{ minio_install_dir }}/minio"
+        register: minio_binary_stat
+
+      - name: Download MinIO server binary
+        ansible.builtin.get_url:
+            url: "{{ minio_binary_url }}"
+            dest: "{{ minio_install_dir }}/minio"
+            mode: "0755"
+            owner: root
+            group: root
+        when: not minio_binary_stat.stat.exists
+
+      - name: Template MinIO environment file (credentials)
+        ansible.builtin.template:
+            src: templates/minio.default.j2
+            dest: "{{ minio_env_file_path }}"
+            owner: root
+            group: "{{ minio_group }}"
+            mode: "0640"
+        notify: Restart minio
+
+      - name: Template MinIO systemd service file (SNSD version)
+        ansible.builtin.template:
+            src: templates/minio.service.j2
+            dest: /etc/systemd/system/minio.service
+            owner: root
+            group: root
+            mode: "0644"
+        notify: Reload systemd
+
+      - name: Ensure MinIO service is enabled and started
+        ansible.builtin.systemd:
+            name: minio
+            enabled: true
+            state: started
+            daemon_reload: true
+
+  handlers:
+      - name: Reload systemd
+        ansible.builtin.systemd:
+            daemon_reload: true
+
+      - name: Restart minio
+        ansible.builtin.systemd:
+            name: minio
+            state: restarted
+            enabled: true

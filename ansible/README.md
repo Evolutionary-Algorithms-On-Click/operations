@@ -29,6 +29,12 @@ worker-node2
 worker-node1
 worker-node2
 
+# ------IMPORTANT---------
+# Exactly one node only
+# should be used for MinIO.
+[minio]
+worker-node2
+
 [all:children]
 master
 workers
@@ -43,6 +49,15 @@ Get a cockroachdb enterprise-free license key by declaring usage of cockroachdb 
 
 ```yml
 crdb_enterprise_license_key: "<<YOUR_LICENSE_KEY>>"
+```
+
+# Minio Config
+
+To use Minio as the object storage for EvOC, you need to create a file in path `ansible/vars/minio_secrets.yml` and paste the access key and secret key in the file. The file should look like this:
+
+```yml
+minio_root_user: "<username>"
+minio_root_password: "<password>"
 ```
 
 # Execute the Playbook

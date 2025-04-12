@@ -427,3 +427,28 @@
             name: minio
             state: restarted
             enabled: true
+
+- name: Install RabbitMQ using Shell Script and Restart via Handler
+  hosts: rabbitmq
+  become: true
+  vars:
+      install_script_local_path: "scripts/install-rabbitmq.sh"
+
+  tasks:
+      - name: Run the RabbitMQ installation script
+        ansible.builtin.script: "{{ install_script_local_path }}"
+        args:
+            creates: /etc/apt/sources.list.d/rabbitmq.list
+        register: script_execution_result
+        changed_when: >
+            '0 upgraded, 0 newly installed' not in script_execution_result.stdout and
+            'Setting up rabbitmq-server' in script_execution_result.stdout
+        notify: Restart rabbitmq-server
+
+  handlers:
+      - name: Restart rabbitmq-server
+        ansible.builtin.systemd:
+            name: rabbitmq-server
+            state: restarted
+            enabled: true
+        listen: "Restart rabbitmq-server"

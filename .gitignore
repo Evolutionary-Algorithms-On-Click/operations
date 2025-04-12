@@ -1,2 +1,6 @@
 *.env
+.ansible
+.vscode
 .DS_Store
+ansible/vars/
+ansible/hosts.ini

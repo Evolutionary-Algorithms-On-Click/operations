@@ -1,0 +1,33 @@
+[Unit]
+Description=MinIO Runtime Object Storage
+Documentation=https://min.io/docs/minio/linux/operations/install-deploy-manage/
+Wants=network-online.target
+After=network-online.target
+AssertFileIsExecutable={{ minio_install_dir }}/minio
+
+[Service]
+WorkingDirectory={{ minio_home_dir }}
+
+User={{ minio_user }}
+Group={{ minio_group }}
+ProtectProc=invisible
+
+EnvironmentFile=-/etc/default/minio
+
+# --- Simplified ExecStart for Single Node Single Drive ---
+ExecStart={{ minio_install_dir }}/minio server --console-address ":{{ minio_console_port }}" {{ minio_data_dir }}
+# --- End of simplification ---
+
+# Let systemd restart this service always
+Restart=always
+# Specifies the maximum file descriptor number that can be opened by this process
+LimitNOFILE={{ minio_limit_nofile }}
+# Specifies the maximum number of threads this process can create
+TasksMax=infinity
+# Disable timeout logic and wait indefinitely for processes to stop
+TimeoutStopSec=infinity
+# SIGTERM signal is used to stop MinIO
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target

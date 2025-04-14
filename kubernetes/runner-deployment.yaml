@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runner-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: runner
+  template:
+    metadata:
+      labels:
+        app: runner
+    spec:
+      containers:
+        - name: runner
+          image: ghcr.io/evolutionary-algorithms-on-click/runner:latest
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: COCKROACHDB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: cockroachdb-url
+            - name: MINIO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: minio-endpoint
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: minio-secret-key
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: rabbitmq-url
+            - name: RABBITMQ_QUEUE
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: rabbitmq-queue-name

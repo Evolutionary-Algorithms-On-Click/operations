@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evolve-frontend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: evolve-frontend
+  template:
+    metadata:
+      labels:
+        app: evolve-frontend
+    spec:
+      containers:
+        - name: evolve-frontend
+          image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: NEXT_PUBLIC_BACKEND_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: next-public-backend-base-url
+            - name: NEXT_PUBLIC_AUTH_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: next-public-auth-base-url
+            - name: NEXT_PUBLIC_MINIO_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: next-public-minio-base-url
+            - name: NEXT_PUBLIC_AI
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: next-public-ai
+            - name: GOOGLE_GENERATIVE_AI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: google-generative-ai-api-key
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: evolve-frontend-service
+spec:
+  selector:
+    app: evolve-frontend
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+  type: NodePort

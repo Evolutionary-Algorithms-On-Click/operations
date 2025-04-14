@@ -58,65 +58,123 @@
         register: docker_version
         changed_when: docker_version.rc != 0
 
-- name: Install Kubernetes
+- name: Manually Install Kubernetes Binaries and Dependencies
   hosts: all
   become: true
+  gather_facts: false
+
+  vars:
+      cni_base_url: "https://github.com/containernetworking/plugins/releases/download"
+      cni_plugins_version: "v1.3.0"
+      arch: "amd64"
+      cni_dest_dir: "/opt/cni/bin"
+      download_dir: "/usr/local/bin"
+      crictl_version: "v1.31.0"
+      k8s_release_utils_version: "v0.16.2"
+      systemd_unit_dir: "/usr/lib/systemd/system"
+      kubelet_service_file: "{{ systemd_unit_dir }}/kubelet.service"
+      kubelet_conf_dir: "{{ systemd_unit_dir }}/kubelet.service.d"
+      kubelet_conf_file: "{{ kubelet_conf_dir }}/10-kubeadm.conf"
+
   tasks:
-      - name: Delete kubectl binary from home directory
+      - name: Ensure CNI destination directory exists
         ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl
-            state: absent
+            path: "{{ cni_dest_dir }}"
+            state: directory
+            mode: "0755"
 
-      - name: Delete checksum file from home directory
+      - name: Download and extract CNI plugins
+        ansible.builtin.unarchive:
+            src: "{{ cni_base_url }}/{{ cni_plugins_version }}/cni-plugins-linux-{{ arch }}-{{ cni_plugins_version }}.tgz"
+            dest: "{{ cni_dest_dir }}"
+            remote_src: true
+            creates: "{{ cni_dest_dir }}/bridge"
+
+      - name: Ensure binary download directory exists
         ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
-            state: absent
+            path: "{{ download_dir }}"
+            state: directory
+            mode: "0755"
 
-      - name: Get latest kubectl version
+      - name: Download and extract crictl
+        ansible.builtin.unarchive:
+            src: "https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-{{ arch }}.tar.gz"
+            dest: "{{ download_dir }}"
+            remote_src: true
+            mode: "0755"
+            creates: "{{ download_dir }}/crictl"
+
+      - name: Get latest stable Kubernetes release version string
         ansible.builtin.uri:
             url: https://dl.k8s.io/release/stable.txt
             return_content: true
-            status_code: 200, 304
-        register: version
+        register: k8s_stable_release
+        check_mode: false
 
-      - name: Download the latest kubectl release
+      - name: Set stable release fact
+        ansible.builtin.set_fact:
+            k8s_release: "{{ k8s_stable_release.content | trim }}"
+
+      - name: Download kubeadm binary
+        ansible.builtin.get_url:
+            url: "https://dl.k8s.io/release/{{ k8s_release }}/bin/linux/{{ arch }}/kubeadm"
+            dest: "{{ download_dir }}/kubeadm"
+            mode: "0755"
+            force: false
+
+      - name: Download kubelet binary
+        ansible.builtin.get_url:
+            url: "https://dl.k8s.io/release/{{ k8s_release }}/bin/linux/{{ arch }}/kubelet"
+            dest: "{{ download_dir }}/kubelet"
+            mode: "0755"
+            force: false
+
+      - name: Fetch kubelet systemd service template content
         ansible.builtin.uri:
-            url: https://dl.k8s.io/release/{{ version.content }}/bin/linux/amd64/kubectl
-            dest: /home/{{ lookup('env', 'USER') }}
-            status_code: 200, 304
-        register: kubectl
+            url: "https://raw.githubusercontent.com/kubernetes/release/{{ k8s_release_utils_version }}/cmd/krel/templates/latest/kubelet/kubelet.service"
+            return_content: true
+        register: kubelet_service_template
+        check_mode: false
 
-      - name: Download the kubectl checksum file
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/{{ version.content }}/bin/linux/amd64/kubectl.sha256
-            dest: /home/{{ lookup('env', 'USER') }}
-            status_code: 200, 304
-
-      - name: Copy kubectl and change permissions
+      - name: Create kubelet systemd service file from template
         ansible.builtin.copy:
-            src: "{{ kubectl.path }}"
-            remote_src: true
-            dest: /usr/local/bin/kubectl
-            owner: root
-            group: root
-            mode: "+x"
+            content: "{{ kubelet_service_template.content | replace('/usr/bin', download_dir) }}"
+            dest: "{{ kubelet_service_file }}"
+            mode: "0644"
+        notify: Reload systemd and restart kubelet
 
-      - name: Check if kubectl is installed
-        ansible.builtin.command:
-            cmd: kubectl version --client
-        register: client
-        failed_when: client.rc > 1
-        changed_when: client.rc != 0
-
-      - name: Remove downloaded binaries from home
+      - name: Ensure kubelet systemd drop-in directory exists
         ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl
-            state: absent
+            path: "{{ kubelet_conf_dir }}"
+            state: directory
+            mode: "0755"
 
-      - name: Remove downloaded checksums from home
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
-            state: absent
+      - name: Fetch kubeadm systemd drop-in template content
+        ansible.builtin.uri:
+            url: "https://raw.githubusercontent.com/kubernetes/release/{{ k8s_release_utils_version }}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
+            return_content: true
+        register: kubeadm_conf_template
+        check_mode: false
+
+      - name: Create kubeadm systemd drop-in file from template
+        ansible.builtin.copy:
+            content: "{{ kubeadm_conf_template.content | replace('/usr/bin', download_dir) }}"
+            dest: "{{ kubelet_conf_file }}"
+            mode: "0644"
+        notify: Reload systemd and restart kubelet
+
+      - name: Ensure kubelet service is enabled and started
+        ansible.builtin.systemd:
+            name: kubelet
+            enabled: true
+            state: started
+
+  handlers:
+      - name: Reload systemd and restart kubelet
+        ansible.builtin.systemd:
+            name: kubelet
+            daemon_reload: true
+            state: restarted
 
 - name: Install and Configure CockroachDB Cluster
   hosts: cockroachdb

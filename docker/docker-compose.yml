@@ -39,7 +39,7 @@ services:
       retries: 5
 
   auth:
-    image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:main
+    image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:latest
     container_name: auth
     depends_on:
       cockroachdb:
@@ -56,7 +56,7 @@ services:
       GRPC_PORT : ${AUTH_GRPC_PORT}
 
   runner_controller:
-    image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:main
+    image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:latest
     container_name: runner_controller
     depends_on:
       cockroachdb:
@@ -78,7 +78,7 @@ services:
       AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
 
   runner:
-    image: ghcr.io/evolutionary-algorithms-on-click/runner:main
+    image: ghcr.io/evolutionary-algorithms-on-click/runner:latest
     container_name: runner
     depends_on:
       cockroachdb:
@@ -98,7 +98,7 @@ services:
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
 
   evolve_frontend:
-    image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:main
+    image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
     container_name: evolve_frontend
     depends_on:
       cockroachdb:

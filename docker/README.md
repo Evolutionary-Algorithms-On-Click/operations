@@ -24,6 +24,9 @@ MAILER_PASSWORD = <mailer-password>
 FRONTEND_URL = http://host.docker.internal:3000
 AUTH_HTTP_PORT = 5000
 AUTH_GRPC_PORT = 5001
+WEBSOCKET_LOG_URL = ws://host.docker.internal:5002/live
+RUNNER_CONTROLLER_HTTP_PORT = 5002
+AUTH_GRPC_ADDRESS = host.docker.internal:5001
 
 RUNNER_CONTROLLER_HTTP_PORT = 5002
 AUTH_GRPC_ADDRESS = host.docker.internal:5001

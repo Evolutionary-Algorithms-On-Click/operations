@@ -29,7 +29,7 @@ services:
       - minio-data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 5
 
@@ -44,7 +44,7 @@ services:
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
       test: ["CMD", "cockroach", "node", "status", "--insecure"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 5
 
@@ -67,7 +67,7 @@ services:
     healthcheck:
       # TODO: Add healthcheck for gRPC endpoint too.
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/test"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 5
 
@@ -78,9 +78,9 @@ services:
       cockroachdb:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "5002:5002"
     environment:
@@ -94,7 +94,7 @@ services:
       AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/api/test"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 5
 
@@ -105,11 +105,11 @@ services:
       cockroachdb:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       runner_controller:
-        condition: service_started
+        condition: service_healthy
     environment:
       COCKROACHDB_URL : ${COCKROACHDB_URL}
       MINIO_URL : ${MINIO_ENDPOINT}
@@ -117,6 +117,7 @@ services:
       MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
       RABBITMQ_URL : ${RABBITMQ_URL}
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
+      WEBSOCKET_LOG_URL: ${WEBSOCKET_LOG_URL}
 
   evolve_frontend:
     image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
@@ -125,13 +126,13 @@ services:
       cockroachdb:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       auth:
-        condition: service_started
+        condition: service_healthy
       runner_controller:
-        condition: service_started
+        condition: service_healthy
       runner:
         condition: service_started
     environment:
@@ -144,7 +145,7 @@ services:
       - "3000:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 5
 

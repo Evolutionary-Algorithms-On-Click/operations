@@ -9,6 +9,11 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+        test: rabbitmq-diagnostics -q ping
+        interval: 15s
+        timeout: 15s
+        retries: 5
 
   minio:
     image: "minio/minio"
@@ -22,9 +27,14 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   cockroachdb:
-    image: cockroachdb/cockroach:v23.1.11
+    image: cockroachdb/cockroach:v25.1.4
     container_name: cockroachdb
     command: start-single-node --insecure
     ports:
@@ -39,7 +49,7 @@ services:
       retries: 5
 
   auth:
-    image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:main
+    image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:latest
     container_name: auth
     depends_on:
       cockroachdb:
@@ -54,9 +64,15 @@ services:
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${AUTH_HTTP_PORT}
       GRPC_PORT : ${AUTH_GRPC_PORT}
+    healthcheck:
+      # TODO: Add healthcheck for gRPC endpoint too.
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   runner_controller:
-    image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:main
+    image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:latest
     container_name: runner_controller
     depends_on:
       cockroachdb:
@@ -76,9 +92,14 @@ services:
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${RUNNER_CONTROLLER_HTTP_PORT}
       AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/api/test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   runner:
-    image: ghcr.io/evolutionary-algorithms-on-click/runner:main
+    image: ghcr.io/evolutionary-algorithms-on-click/runner:latest
     container_name: runner
     depends_on:
       cockroachdb:
@@ -98,7 +119,7 @@ services:
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
 
   evolve_frontend:
-    image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:main
+    image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
     container_name: evolve_frontend
     depends_on:
       cockroachdb:
@@ -121,6 +142,11 @@ services:
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   minio-data:

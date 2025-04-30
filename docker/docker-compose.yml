@@ -27,6 +27,11 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   cockroachdb:
     image: cockroachdb/cockroach:v25.1.4
@@ -59,6 +64,12 @@ services:
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${AUTH_HTTP_PORT}
       GRPC_PORT : ${AUTH_GRPC_PORT}
+    healthcheck:
+      # TODO: Add healthcheck for gRPC endpoint too.
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   runner_controller:
     image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:latest
@@ -81,6 +92,11 @@ services:
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${RUNNER_CONTROLLER_HTTP_PORT}
       AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/api/test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   runner:
     image: ghcr.io/evolutionary-algorithms-on-click/runner:latest
@@ -126,6 +142,11 @@ services:
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   minio-data:

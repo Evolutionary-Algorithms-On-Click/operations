@@ -47,6 +47,17 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+  
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   auth:
     image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:latest
@@ -81,6 +92,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "5002:5002"
     environment:
@@ -92,6 +105,7 @@ services:
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${RUNNER_CONTROLLER_HTTP_PORT}
       AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
+      REDIS_URL: ${REDIS_URL}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/api/test"]
       interval: 15s
@@ -110,6 +124,8 @@ services:
         condition: service_healthy
       runner_controller:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       COCKROACHDB_URL : ${COCKROACHDB_URL}
       MINIO_URL : ${MINIO_ENDPOINT}
@@ -117,7 +133,7 @@ services:
       MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
       RABBITMQ_URL : ${RABBITMQ_URL}
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
-      WEBSOCKET_LOG_URL: ${WEBSOCKET_LOG_URL}
+      REDIS_URL: ${REDIS_URL}
 
   evolve_frontend:
     image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest

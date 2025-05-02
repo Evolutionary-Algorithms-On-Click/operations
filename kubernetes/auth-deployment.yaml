@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth
+  template:
+    metadata:
+      labels:
+        app: auth
+    spec:
+      containers:
+        - name: auth
+          image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:latest
+          ports:
+            - containerPort: 5000
+            - containerPort: 5001
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "250m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: cockroachdb-url
+            - name: MAILER_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: mailer-email
+            - name: MAILER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: mailer-password
+            - name: FRONTEND_URL
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: frontend-url
+            - name: HTTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: auth-http-port
+            - name: GRPC_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: auth-grpc-port
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+spec:
+  selector:
+    app: auth
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+    - protocol: TCP
+      port: 5001
+      targetPort: 5001
+  type: NodePort

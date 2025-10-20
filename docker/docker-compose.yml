@@ -75,6 +75,7 @@ services:
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${AUTH_HTTP_PORT}
       GRPC_PORT : ${AUTH_GRPC_PORT}
+      ENV: "PRODUCTION"
     healthcheck:
       # TODO: Add healthcheck for gRPC endpoint too.
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/test"]

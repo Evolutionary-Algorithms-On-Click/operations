@@ -1,4 +1,3 @@
-
 services:
   minio:
     image: "minio/minio"
@@ -32,7 +31,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-  
+
   redis:
     image: redis:latest
     container_name: redis
@@ -54,20 +53,21 @@ services:
       - "5000:5000"
       - "5001:5001"
     environment:
-      DATABASE_URL : ${COCKROACHDB_URL}
-      MAILER_EMAIL : ${MAILER_EMAIL}
-      MAILER_PASSWORD : ${MAILER_PASSWORD}
-      FRONTEND_URL : ${FRONTEND_URL}
-      HTTP_PORT : ${AUTH_HTTP_PORT}
-      GRPC_PORT : ${AUTH_GRPC_PORT}
+      DATABASE_URL: ${COCKROACHDB_URL}
+      MAILER_EMAIL: ${MAILER_EMAIL}
+      MAILER_PASSWORD: ${MAILER_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL}
+      HTTP_PORT: ${AUTH_HTTP_PORT}
+      GRPC_PORT: ${AUTH_GRPC_PORT}
       ENV: "PRODUCTION"
-      INIT_DB : ${INIT_DB_FLAG}
+      INIT_DB: ${INIT_DB_FLAG}
     healthcheck:
       # TODO: Add healthcheck for gRPC endpoint too.
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/test"]
       interval: 15s
       timeout: 5s
       retries: 5
+    pull_policy: always
 
   runner_controller:
     image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:latest
@@ -82,13 +82,13 @@ services:
     ports:
       - "5002:5002"
     environment:
-      DATABASE_URL : ${COCKROACHDB_URL}
-      MINIO_ENDPOINT : ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY_ID : ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
-      FRONTEND_URL : ${FRONTEND_URL}
-      HTTP_PORT : ${RUNNER_CONTROLLER_HTTP_PORT}
-      AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
+      DATABASE_URL: ${COCKROACHDB_URL}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+      HTTP_PORT: ${RUNNER_CONTROLLER_HTTP_PORT}
+      AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
       REDIS_URL: ${REDIS_URL}
       REDIS_QUEUE_NAME: ${REDIS_QUEUE_NAME}
     healthcheck:
@@ -96,6 +96,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    pull_policy: always
 
   runner:
     image: ghcr.io/evolutionary-algorithms-on-click/runner:latest
@@ -110,12 +111,13 @@ services:
       redis:
         condition: service_healthy
     environment:
-      COCKROACHDB_URL : ${COCKROACHDB_URL}
-      MINIO_URL : ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY : ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
+      COCKROACHDB_URL: ${COCKROACHDB_URL}
+      MINIO_URL: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       REDIS_URL: ${REDIS_URL}
       REDIS_QUEUE_NAME: ${REDIS_QUEUE_NAME}
+    pull_policy: always
 
   evolve_frontend:
     image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
@@ -132,11 +134,11 @@ services:
       runner:
         condition: service_started
     environment:
-      NEXT_PUBLIC_BACKEND_BASE_URL : ${NEXT_PUBLIC_BACKEND_BASE_URL}
-      NEXT_PUBLIC_AUTH_BASE_URL : ${NEXT_PUBLIC_AUTH_BASE_URL}
-      NEXT_PUBLIC_MINIO_BASE_URL : ${NEXT_PUBLIC_MINIO_BASE_URL}
-      NEXT_PUBLIC_AI : ${NEXT_PUBLIC_AI}
-      GOOGLE_GENERATIVE_AI_API_KEY : ${GOOGLE_GENERATIVE_AI_API_KEY}
+      NEXT_PUBLIC_BACKEND_BASE_URL: ${NEXT_PUBLIC_BACKEND_BASE_URL}
+      NEXT_PUBLIC_AUTH_BASE_URL: ${NEXT_PUBLIC_AUTH_BASE_URL}
+      NEXT_PUBLIC_MINIO_BASE_URL: ${NEXT_PUBLIC_MINIO_BASE_URL}
+      NEXT_PUBLIC_AI: ${NEXT_PUBLIC_AI}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY}
     ports:
       - "3000:3000"
     healthcheck:
@@ -144,6 +146,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    pull_policy: always
 
 volumes:
   minio-data:

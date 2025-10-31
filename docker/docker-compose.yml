@@ -1,20 +1,5 @@
 
 services:
-  rabbitmq:
-    image: "rabbitmq:4.0-management"
-    container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    healthcheck:
-        test: rabbitmq-diagnostics -q ping
-        interval: 15s
-        timeout: 15s
-        retries: 5
-
   minio:
     image: "minio/minio"
     container_name: minio
@@ -90,8 +75,6 @@ services:
     depends_on:
       cockroachdb:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
       minio:
         condition: service_healthy
       redis:
@@ -103,11 +86,11 @@ services:
       MINIO_ENDPOINT : ${MINIO_ENDPOINT}
       MINIO_ACCESS_KEY_ID : ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
-      RABBITMQ_URL : ${RABBITMQ_URL}
       FRONTEND_URL : ${FRONTEND_URL}
       HTTP_PORT : ${RUNNER_CONTROLLER_HTTP_PORT}
       AUTH_GRPC_ADDRESS : ${AUTH_GRPC_ADDRESS}
       REDIS_URL: ${REDIS_URL}
+      REDIS_QUEUE_NAME: ${REDIS_QUEUE_NAME}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/api/test"]
       interval: 15s
@@ -120,8 +103,6 @@ services:
     depends_on:
       cockroachdb:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
       minio:
         condition: service_healthy
       runner_controller:
@@ -133,17 +114,14 @@ services:
       MINIO_URL : ${MINIO_ENDPOINT}
       MINIO_ACCESS_KEY : ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY : ${MINIO_SECRET_KEY}
-      RABBITMQ_URL : ${RABBITMQ_URL}
-      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE_NAME}
       REDIS_URL: ${REDIS_URL}
+      REDIS_QUEUE_NAME: ${REDIS_QUEUE_NAME}
 
   evolve_frontend:
     image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
     container_name: evolve_frontend
     depends_on:
       cockroachdb:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
       minio:
         condition: service_healthy

@@ -58,65 +58,424 @@
         register: docker_version
         changed_when: docker_version.rc != 0
 
-- name: Install Kubernetes
-  hosts: all
-  become: true
-  tasks:
-      - name: Delete kubectl binary from home directory
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl
-            state: absent
+# - name: Install cri-dockerd and Kubernetes Binaries Manually
+#   hosts: all
+#   become: true
+#   gather_facts: true
 
-      - name: Delete checksum file from home directory
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
-            state: absent
+#   vars:
+#       cni_plugins_version: "v1.3.0"
+#       crictl_version: "v1.31.0"
+#       k8s_release_utils_version: "v0.16.2"
 
-      - name: Get latest kubectl version
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/release/stable.txt
-            return_content: true
-            status_code: 200, 304
-        register: version
+#       arch: "amd64"
+#       cri_dockerd_arch: "amd64"
+#       cni_dest_dir: "/opt/cni/bin"
+#       download_dir: "/usr/local/bin"
+#       cri_dockerd_bin_path: "{{ download_dir }}/cri-dockerd"
+#       systemd_dir: "/etc/systemd/system"
 
-      - name: Download the latest kubectl release
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/release/{{ version.content }}/bin/linux/amd64/kubectl
-            dest: /home/{{ lookup('env', 'USER') }}
-            status_code: 200, 304
-        register: kubectl
+#       # cri-dockerd Prefixes
+#       cri_dockerd_api_url: "https://api.github.com/repos/Mirantis/cri-dockerd/releases/latest"
+#       cri_dockerd_release_prefix: "https://github.com/Mirantis/cri-dockerd/releases/download"
+#       cri_dockerd_raw_prefix: "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd"
 
-      - name: Download the kubectl checksum file
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/{{ version.content }}/bin/linux/amd64/kubectl.sha256
-            dest: /home/{{ lookup('env', 'USER') }}
-            status_code: 200, 304
+#       # CNI Plugins Prefix
+#       cni_plugins_release_prefix: "https://github.com/containernetworking/plugins/releases/download"
 
-      - name: Copy kubectl and change permissions
-        ansible.builtin.copy:
-            src: "{{ kubectl.path }}"
-            remote_src: true
-            dest: /usr/local/bin/kubectl
-            owner: root
-            group: root
-            mode: "+x"
+#       # cri-tools (crictl) Prefix
+#       crictl_release_prefix: "https://github.com/kubernetes-sigs/cri-tools/releases/download"
 
-      - name: Check if kubectl is installed
-        ansible.builtin.command:
-            cmd: kubectl version --client
-        register: client
-        failed_when: client.rc > 1
-        changed_when: client.rc != 0
+#       # K8s Release Utils (Templates) Prefix
+#       k8s_release_raw_prefix: "https://raw.githubusercontent.com/kubernetes/release"
 
-      - name: Remove downloaded binaries from home
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl
-            state: absent
+#       # --- Filenames and Paths (still useful) ---
+#       cni_plugins_archive_filename: "cni-plugins-linux-{{ arch }}-{{ cni_plugins_version }}.tgz"
+#       crictl_archive_filename: "crictl-{{ crictl_version }}-linux-{{ arch }}.tar.gz"
+#       kubelet_service_template_path: "{{ k8s_release_utils_version }}/cmd/krel/templates/latest/kubelet/kubelet.service"
+#       kubeadm_conf_template_path: "{{ k8s_release_utils_version }}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
 
-      - name: Remove downloaded checksums from home
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
-            state: absent
+#       # --- Systemd unit file paths for kubelet ---
+#       kubelet_service_file: "{{ systemd_dir }}/kubelet.service"
+#       kubelet_conf_dir: "{{ systemd_dir }}/kubelet.service.d"
+#       kubelet_conf_file: "{{ kubelet_conf_dir }}/10-kubeadm.conf"
+
+#   tasks:
+#       # Install cri-dockerd
+#       - name: Check if cri-dockerd is already installed
+#         ansible.builtin.stat:
+#             path: "{{ cri_dockerd_bin_path }}"
+#         register: cri_dockerd_binary_stat
+
+#       - name: Block for cri-dockerd installation tasks
+#         when: not cri_dockerd_binary_stat.stat.exists
+#         block:
+#             - name: Install prerequisites (curl/wget, tar)
+#               ansible.builtin.package:
+#                   name:
+#                       - curl
+#                       - tar
+#                       - ca-certificates
+#                   state: present
+
+#             - name: Get latest cri-dockerd release tag from GitHub API
+#               ansible.builtin.uri:
+#                   url: "{{ cri_dockerd_api_url }}"
+#                   return_content: true
+#                   headers:
+#                       Accept: application/vnd.github.v3+json
+#               register: cri_dockerd_latest_release
+#               check_mode: false
+
+#             - name: Exit if GitHub API call failed
+#               ansible.builtin.fail:
+#                   msg: "Failed to retrieve cri-dockerd latest release info from {{ cri_dockerd_api_url }}. Status: {{ cri_dockerd_latest_release.status }}"
+#               when: cri_dockerd_latest_release.status != 200
+
+#             - name: Extract cri-dockerd version from tag
+#               ansible.builtin.set_fact:
+#                   cri_dockerd_version: "{{ (cri_dockerd_latest_release.content | from_json).tag_name | regex_replace('^v', '') }}"
+
+#             - name: Define cri-dockerd download URL and paths
+#               ansible.builtin.set_fact:
+#                   cri_dockerd_tmp_archive: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.{{ cri_dockerd_arch }}.tgz"
+#                   cri_dockerd_tmp_extract_dir: "/tmp/cri-dockerd-extract-{{ cri_dockerd_version }}"
+
+#             - name: Download cri-dockerd archive
+#               ansible.builtin.get_url:
+#                   url: "{{ cri_dockerd_release_prefix }}/v{{ cri_dockerd_version }}/cri-dockerd-{{ cri_dockerd_version }}.{{ cri_dockerd_arch }}.tgz"
+#                   dest: "{{ cri_dockerd_tmp_archive }}"
+#                   mode: "0644"
+
+#             - name: Ensure temporary extraction directory exists and is empty
+#               ansible.builtin.file:
+#                   path: "{{ cri_dockerd_tmp_extract_dir }}"
+#                   state: absent
+#               check_mode: false
+
+#             - name: Ensure temporary extraction directory exists
+#               ansible.builtin.file:
+#                   path: "{{ cri_dockerd_tmp_extract_dir }}"
+#                   state: directory
+#                   mode: "0755"
+
+#             - name: Extract cri-dockerd archive
+#               ansible.builtin.unarchive:
+#                   src: "{{ cri_dockerd_tmp_archive }}"
+#                   dest: "{{ cri_dockerd_tmp_extract_dir }}"
+#                   remote_src: true
+
+#             - name: Ensure destination directory for binary exists
+#               ansible.builtin.file:
+#                   path: "{{ cri_dockerd_bin_path | dirname }}"
+#                   state: directory
+#                   mode: "0755"
+
+#             - name: Move cri-dockerd binary to final destination
+#               ansible.builtin.copy:
+#                   src: "{{ cri_dockerd_tmp_extract_dir }}/cri-dockerd/cri-dockerd"
+#                   dest: "{{ cri_dockerd_bin_path }}"
+#                   remote_src: true
+#                   mode: "0755"
+#                   owner: root
+#                   group: root
+#               notify: Clean up cri-dockerd temp files
+
+#             - name: Download cri-docker.service systemd file
+#               ansible.builtin.get_url:
+#                   url: "{{ cri_dockerd_raw_prefix }}/cri-docker.service"
+#                   dest: "{{ systemd_dir }}/cri-docker.service"
+#                   mode: "0644"
+#               register: cri_service_download
+
+#             - name: Download cri-docker.socket systemd file
+#               ansible.builtin.get_url:
+#                   url: "{{ cri_dockerd_raw_prefix }}/cri-docker.socket"
+#                   dest: "{{ systemd_dir }}/cri-docker.socket"
+#                   mode: "0644"
+#               register: cri_socket_download
+
+#             - name: Modify cri-docker.service to point to correct binary path
+#               ansible.builtin.replace:
+#                   path: "{{ systemd_dir }}/cri-docker.service"
+#                   regexp: "/usr/bin/cri-dockerd"
+#                   replace: "{{ cri_dockerd_bin_path }}"
+#               when: cri_service_download.changed or cri_socket_download.changed
+#               notify: Reload systemd and restart cri-dockerd
+
+#             # --- Systemd Handling for cri-dockerd ---
+#             - name: Force systemd daemon-reload (cri-dockerd)
+#               ansible.builtin.systemd:
+#                   daemon_reload: true
+#               when: cri_service_download.changed or cri_socket_download.changed
+
+#             - name: Enable cri-docker service
+#               ansible.builtin.systemd:
+#                   name: cri-docker.service
+#                   enabled: true
+
+#             - name: Enable and start cri-docker socket
+#               ansible.builtin.systemd:
+#                   name: cri-docker.socket
+#                   enabled: true
+#                   state: started
+
+#       # Install CNI / crictl / kubeadm / kubelet
+#       - name: Ensure CNI destination directory exists
+#         ansible.builtin.file:
+#             path: "{{ cni_dest_dir }}"
+#             state: directory
+#             mode: "0755"
+
+#       - name: Download and extract CNI plugins
+#         ansible.builtin.unarchive:
+#             src: "{{ cni_plugins_release_prefix }}/{{ cni_plugins_version }}/{{ cni_plugins_archive_filename }}"
+#             dest: "{{ cni_dest_dir }}"
+#             remote_src: true
+#             creates: "{{ cni_dest_dir }}/bridge"
+
+#       - name: Ensure binary download directory exists
+#         ansible.builtin.file:
+#             path: "{{ download_dir }}"
+#             state: directory
+#             mode: "0755"
+
+#       - name: Download and extract crictl
+#         ansible.builtin.unarchive:
+#             src: "{{ crictl_release_prefix }}/{{ crictl_version }}/{{ crictl_archive_filename }}"
+#             dest: "{{ download_dir }}"
+#             remote_src: true
+#             mode: "0755"
+#             creates: "{{ download_dir }}/crictl"
+
+#       - name: Get latest stable Kubernetes release version string
+#         ansible.builtin.uri:
+#             url: https://dl.k8s.io/release/stable.txt
+#             return_content: true
+#         register: k8s_stable_release
+#         check_mode: false
+
+#       - name: Set stable release fact
+#         ansible.builtin.set_fact:
+#             k8s_release: "{{ k8s_stable_release.content | trim }}"
+
+#       - name: Download kubeadm binary
+#         ansible.builtin.get_url:
+#             url: "https://dl.k8s.io/release/{{ k8s_release }}/bin/linux/{{ arch }}/kubeadm"
+#             dest: "{{ download_dir }}/kubeadm"
+#             mode: "0755"
+#             force: false
+
+#       - name: Download kubelet binary
+#         ansible.builtin.get_url:
+#             url: "https://dl.k8s.io/release/{{ k8s_release }}/bin/linux/{{ arch }}/kubelet"
+#             dest: "{{ download_dir }}/kubelet"
+#             mode: "0755"
+#             force: false
+
+#       # --- Kubelet Systemd Setup ---
+#       - name: Fetch kubelet systemd service template content
+#         ansible.builtin.uri:
+#             url: "{{ k8s_release_raw_prefix }}/{{ kubelet_service_template_path }}"
+#             return_content: true
+#         register: kubelet_service_template
+#         check_mode: false
+
+#       - name: Create kubelet systemd service file from template
+#         ansible.builtin.copy:
+#             content: "{{ kubelet_service_template.content | replace('/usr/bin', download_dir) }}"
+#             dest: "{{ kubelet_service_file }}"
+#             mode: "0644"
+#         notify: Reload systemd and restart kubelet
+
+#       - name: Ensure kubelet systemd drop-in directory exists
+#         ansible.builtin.file:
+#             path: "{{ kubelet_conf_dir }}"
+#             state: directory
+#             mode: "0755"
+
+#       - name: Fetch kubeadm systemd drop-in template content
+#         ansible.builtin.uri:
+#             url: "{{ k8s_release_raw_prefix }}/{{ kubeadm_conf_template_path }}"
+#             return_content: true
+#         register: kubeadm_conf_template
+#         check_mode: false
+
+#       - name: Create kubeadm systemd drop-in file from template
+#         ansible.builtin.copy:
+#             content: "{{ kubeadm_conf_template.content | replace('/usr/bin', download_dir) }}"
+#             dest: "{{ kubelet_conf_file }}"
+#             mode: "0644"
+#         notify: Reload systemd and restart kubelet
+
+#       - name: Ensure kubelet service is enabled
+#         ansible.builtin.systemd:
+#             name: kubelet
+#             enabled: true
+
+#       - name: Disable Swap
+#         ansible.builtin.command:
+#             cmd: swapoff -a
+#         register: swapoff_result
+#         changed_when: swapoff_result.rc != 0
+
+#       - name: Disable swap - comment out swap entries in fstab using replace
+#         ansible.builtin.replace:
+#             # sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+#             path: /etc/fstab
+#             regexp: '^(?!\s*#)(.*\sswap\s.*)$'
+#             replace: '# \1'
+#             backup: true
+#         when: swapoff_result.rc == 0
+
+#   handlers:
+#       - name: Reload systemd and restart kubelet
+#         ansible.builtin.systemd:
+#             name: kubelet
+#             daemon_reload: true
+#             state: restarted
+
+#       - name: Reload systemd and restart cri-dockerd
+#         ansible.builtin.systemd:
+#             name: cri-docker.service
+#             daemon_reload: true
+#             state: restarted
+#         listen: Reload systemd and restart cri-dockerd
+
+#       - name: Clean up cri-dockerd temp files
+#         ansible.builtin.file:
+#             path: "{{ item }}"
+#             state: absent
+#         loop:
+#             - "{{ cri_dockerd_tmp_archive }}"
+#             - "{{ cri_dockerd_tmp_extract_dir }}"
+#         check_mode: false
+
+# - name: Configure Kernel Modules and Sysctl for Kubernetes Prerequisites
+#   hosts: all
+#   become: true
+
+#   tasks:
+#       - name: Ensure kernel modules required by Kubernetes are loaded on boot
+#         ansible.builtin.copy:
+#             dest: /etc/modules-load.d/k8s.conf
+#             content: |
+#                 overlay
+#                 br_netfilter
+#             owner: root
+#             group: root
+#             mode: "0644"
+#         notify: Reload sysctl
+
+#       - name: Load kernel modules immediately
+#         community.general.modprobe:
+#             name: "{{ item }}"
+#             state: present
+#         loop:
+#             - overlay
+#             - br_netfilter
+
+#       - name: Ensure required sysctl parameters are set for Kubernetes
+#         ansible.posix.sysctl:
+#             name: "{{ item.key }}"
+#             value: "{{ item.value }}"
+#             sysctl_file: /etc/sysctl.d/k8s.conf
+#             state: present
+#             reload: true
+#         loop:
+#             - { key: "net.bridge.bridge-nf-call-iptables", value: "1" }
+#             - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+#             - { key: "net.ipv4.ip_forward", value: "1" }
+#         notify: Reload sysctl
+
+#   handlers:
+#       - name: Reload sysctl
+#         ansible.builtin.command: sysctl --system
+#         listen: Reload sysctl
+#         register: sysctl_reload_result
+#         changed_when: sysctl_reload_result.rc != 0
+
+# - name: Start kubeadm on master
+#   hosts: master
+#   become: true
+#   gather_facts: false
+#   vars:
+#       setup_user: "{{ ansible_user_id }}"
+#       setup_group: "{{ ansible_user_gid }}"
+#       setup_home: "{{ ansible_env.HOME }}"
+#       setup_home_fallback: "/home/{{ setup_user }}"
+#   tasks:
+#       - name: Reset kubeadm.
+#         ansible.builtin.command:
+#             cmd: kubeadm reset --cri-socket=unix:///var/run/cri-dockerd.sock -f
+#         register: reset_result
+#         changed_when: reset_result.rc != 0
+
+#       - name: Initialize kubernetes cluster.
+#         ansible.builtin.command:
+#             cmd: kubeadm init --cri-socket=unix:///var/run/cri-dockerd.sock --pod-network-cidr=10.244.0.0/16
+#         register: init_result
+#         changed_when: init_result.rc != 0
+#         failed_when: init_result.rc != 0 and 'kubeadm has already been initialized' not in init_result.stderr
+
+#       - name: Determine effective home directory path
+#         ansible.builtin.set_fact:
+#             effective_home: "{{ setup_home | default(setup_home_fallback) }}"
+
+#       - name: Fail if effective home directory could not be determined
+#         ansible.builtin.fail:
+#             msg: >-
+#                 Could not determine home directory for user '{{ setup_user }}'.
+#                 Tried ansible_env.HOME and fallback '{{ setup_home_fallback }}'.
+#                 Check gathered facts or set 'setup_home' variable explicitly.
+#         when: effective_home is not defined or effective_home == ""
+
+#       - name: Create .kube directory in user's home
+#         ansible.builtin.file:
+#             path: "{{ effective_home }}/.kube"
+#             state: directory
+#             owner: "{{ setup_user }}"
+#             group: "{{ setup_group }}"
+#             mode: "0700"
+
+#       - name: Copy admin.conf to user's .kube/config and set ownership
+#         ansible.builtin.copy:
+#             src: /etc/kubernetes/admin.conf
+#             dest: "{{ effective_home }}/.kube/config"
+#             remote_src: true
+#             owner: "{{ setup_user }}"
+#             group: "{{ setup_group }}"
+#             mode: "0600"
+#             backup: true
+
+# - name: Join Worker Nodes to Cluster
+#   hosts: workers
+#   become: true
+#   gather_facts: false
+
+#   vars:
+#       control_plane_node: "{{ groups['master'][0] }}"
+#       cri_socket_path: "unix:///var/run/cri-dockerd.sock"
+
+#   tasks:
+#       - name: Retrieve join command from control plane node
+#         ansible.builtin.command:
+#             cmd: kubeadm token create --print-join-command
+#         register: join_command_result
+#         delegate_to: "{{ control_plane_node }}"
+#         changed_when: false
+#         failed_when: join_command_result.rc != 0
+
+#       - name: Extract the join command string
+#         ansible.builtin.set_fact:
+#             kubeadm_join_command: "{{ join_command_result.stdout | trim }}"
+
+#       - name: Join worker node to the cluster
+#         ansible.builtin.command:
+#             cmd: "{{ kubeadm_join_command }} --cri-socket={{ cri_socket_path }} --pod-network-cidr=10.244.0.0/16"
+#             creates: /etc/kubernetes/kubelet.conf
+#         register: join_worker_result
+#         changed_when: join_worker_result.rc == 0
 
 - name: Install and Configure CockroachDB Cluster
   hosts: cockroachdb

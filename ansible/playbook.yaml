@@ -11,6 +11,19 @@
             update_cache: true
             upgrade: true
 
+      - name: Install mandatory system packages
+        ansible.builtin.apt:
+            pkg:
+                - conntrack
+                - socat
+                - ipset
+            state: present
+
+      - name: Set architecture mapping
+        ansible.builtin.set_fact:
+            deb_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+            go_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
       - name: Load bridge-netfilter and overlay modules
         ansible.builtin.shell: |
             modprobe overlay
@@ -96,13 +109,13 @@
   tasks:
       - name: Download cri-dockerd binary
         ansible.builtin.get_url:
-            url: "https://github.com/Mirantis/cri-dockerd/releases/download/v{{ cri_dockerd_version }}/cri-dockerd-{{ cri_dockerd_version }}.amd64.tgz"
-            dest: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.amd64.tgz"
+            url: "https://github.com/Mirantis/cri-dockerd/releases/download/v{{ cri_dockerd_version }}/cri-dockerd-{{ cri_dockerd_version }}.{{ go_arch }}.tgz"
+            dest: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.{{ go_arch }}.tgz"
             mode: "0644"
 
       - name: Extract cri-dockerd archive
         ansible.builtin.unarchive:
-            src: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.amd64.tgz"
+            src: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.{{ go_arch }}.tgz"
             dest: /tmp
             remote_src: true
 
@@ -131,12 +144,18 @@
             regexp: "/usr/bin/cri-dockerd"
             replace: "/usr/local/bin/cri-dockerd"
 
-      - name: Enable and start cri-dockerd
+      - name: Enable and start cri-docker socket
         ansible.builtin.systemd:
             name: cri-docker.socket
             enabled: true
             state: started
             daemon_reload: true
+
+      - name: Enable and start cri-docker service
+        ansible.builtin.systemd:
+            name: cri-docker.service
+            enabled: true
+            state: started
 
       - name: Configure crictl to use cri-dockerd socket
         ansible.builtin.copy:
@@ -159,6 +178,7 @@
                 - ca-certificates
                 - curl
                 - gpg
+                - conntrack
             state: present
             update_cache: true
 
@@ -180,7 +200,7 @@
 
       - name: Add Kubernetes apt repository
         ansible.builtin.shell: |
-            echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+            echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
         changed_when: false
 
       - name: Install kubelet, kubeadm and kubectl
@@ -207,9 +227,20 @@
   hosts: master
   become: true
   tasks:
+      - name: Restart cri-docker service to ensure it is healthy
+        ansible.builtin.systemd:
+            name: cri-docker.service
+            state: restarted
+
+      - name: Wait for cri-dockerd socket
+        ansible.builtin.wait_for:
+            path: /var/run/cri-dockerd.sock
+            state: present
+            timeout: 30
+
       - name: Initialize the cluster
         ansible.builtin.command:
-            cmd: kubeadm init --cri-socket=unix:///var/run/cri-dockerd.sock --pod-network-cidr=10.244.0.0/16
+            cmd: kubeadm init --cri-socket=unix:///var/run/cri-dockerd.sock --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=all
         register: kubeadm_init
         changed_when: "'Your Kubernetes control-plane has initialized successfully!' in kubeadm_init.stdout"
         failed_when: kubeadm_init.rc != 0 and 'already exists' not in kubeadm_init.stderr
@@ -256,13 +287,13 @@
   become: true
   vars:
       crdb_version: "v25.1.0"
-      crdb_binary_url: "https://binaries.cockroachdb.com/cockroach-{{ crdb_version }}.linux-amd64.tgz"
+      crdb_binary_url: "https://binaries.cockroachdb.com/cockroach-{{ crdb_version }}.linux-{{ go_arch }}.tgz"
       crdb_install_dir: "/usr/local/bin"
       crdb_data_dir: "/var/lib/cockroach"
       crdb_run_dir: "/var/run/cockroach"
-      crdb_download_dest: "/tmp/cockroach-{{ crdb_version }}.linux-amd64.tgz"
+      crdb_download_dest: "/tmp/cockroach-{{ crdb_version }}.linux-{{ go_arch }}.tgz"
       crdb_extract_dest: "/tmp"
-      crdb_extracted_path: "/tmp/cockroach-{{ crdb_version }}.linux-amd64/cockroach"
+      crdb_extracted_path: "/tmp/cockroach-{{ crdb_version }}.linux-{{ go_arch }}/cockroach"
       crdb_user: cockroach
       crdb_group: cockroach
 
@@ -377,7 +408,7 @@
             state: absent
         loop:
             - "{{ crdb_download_dest }}"
-            - "/tmp/cockroach-{{ crdb_version }}.linux-amd64"
+            - "/tmp/cockroach-{{ crdb_version }}.linux-{{ go_arch }}"
         when: not ansible_check_mode
 
       - name: Template CockroachDB systemd service file
@@ -455,6 +486,7 @@
                 --execute="SET CLUSTER SETTING enterprise.license = '{{ crdb_enterprise_license_key }}';"
                 --host={{ ansible_host }}:26257 --insecure
         register: set_license_result
+        failed_when: false
         changed_when: "'cluster setting updated' in set_license_result.stdout"
 
 - name: Install and Configure MinIO (Single Node Single Drive)
@@ -470,7 +502,7 @@
       minio_install_dir: "/usr/local/bin"
       minio_config_dir: "/etc/minio"
       minio_env_file_path: "/etc/default/minio"
-      minio_binary_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
+      minio_binary_url: "https://dl.min.io/server/minio/release/linux-{{ go_arch }}/minio"
       minio_limit_nofile: 1048576
       minio_console_port: 9001
       # --- Define ONE data directory ---

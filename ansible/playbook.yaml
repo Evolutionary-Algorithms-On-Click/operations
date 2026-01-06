@@ -1,5 +1,5 @@
 ---
-- name: Initial setup.
+- name: Initial setup and Prerequisites.
   hosts: all
   become: true
   tasks:
@@ -10,6 +10,36 @@
         ansible.builtin.apt:
             update_cache: true
             upgrade: true
+
+      - name: Load bridge-netfilter and overlay modules
+        ansible.builtin.shell: |
+            modprobe overlay
+            modprobe br_netfilter
+        changed_when: false
+
+      - name: Set sysctl parameters for Kubernetes
+        ansible.builtin.copy:
+            dest: /etc/sysctl.d/k8s.conf
+            content: |
+                net.bridge.bridge-nf-call-iptables  = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+                net.ipv4.ip_forward                 = 1
+            mode: "0644"
+
+      - name: Apply sysctl parameters
+        ansible.builtin.command: sysctl --system
+        changed_when: false
+
+      - name: Disable swap
+        ansible.builtin.command: swapoff -a
+        when: ansible_swaptotal_mb > 0
+        changed_when: true
+
+      - name: Disable swap in fstab
+        ansible.builtin.replace:
+            path: /etc/fstab
+            regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+            replace: '# \1'
 
 - name: Install Docker.
   gather_facts: false
@@ -58,65 +88,168 @@
         register: docker_version
         changed_when: docker_version.rc != 0
 
-- name: Install Kubernetes
+- name: Install cri-dockerd.
+  hosts: all
+  become: true
+  vars:
+      cri_dockerd_version: "0.3.21"
+  tasks:
+      - name: Download cri-dockerd binary
+        ansible.builtin.get_url:
+            url: "https://github.com/Mirantis/cri-dockerd/releases/download/v{{ cri_dockerd_version }}/cri-dockerd-{{ cri_dockerd_version }}.amd64.tgz"
+            dest: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.amd64.tgz"
+            mode: "0644"
+
+      - name: Extract cri-dockerd archive
+        ansible.builtin.unarchive:
+            src: "/tmp/cri-dockerd-{{ cri_dockerd_version }}.amd64.tgz"
+            dest: /tmp
+            remote_src: true
+
+      - name: Copy cri-dockerd binary to /usr/local/bin
+        ansible.builtin.copy:
+            src: /tmp/cri-dockerd/cri-dockerd
+            dest: /usr/local/bin/cri-dockerd
+            mode: "0755"
+            remote_src: true
+
+      - name: Download cri-dockerd systemd service file
+        ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service
+            dest: /etc/systemd/system/cri-docker.service
+            mode: "0644"
+
+      - name: Download cri-dockerd systemd socket file
+        ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket
+            dest: /etc/systemd/system/cri-docker.socket
+            mode: "0644"
+
+      - name: Update ExecStart path in cri-docker.service
+        ansible.builtin.replace:
+            path: /etc/systemd/system/cri-docker.service
+            regexp: "/usr/bin/cri-dockerd"
+            replace: "/usr/local/bin/cri-dockerd"
+
+      - name: Enable and start cri-dockerd
+        ansible.builtin.systemd:
+            name: cri-docker.socket
+            enabled: true
+            state: started
+            daemon_reload: true
+
+      - name: Configure crictl to use cri-dockerd socket
+        ansible.builtin.copy:
+            dest: /etc/crictl.yaml
+            content: |
+                runtime-endpoint: unix:///var/run/cri-dockerd.sock
+                image-endpoint: unix:///var/run/cri-dockerd.sock
+                timeout: 10
+                debug: false
+            mode: "0644"
+
+- name: Install Kubernetes Components
   hosts: all
   become: true
   tasks:
-      - name: Delete kubectl binary from home directory
+      - name: Install required system packages for Kubernetes
+        ansible.builtin.apt:
+            pkg:
+                - apt-transport-https
+                - ca-certificates
+                - curl
+                - gpg
+            state: present
+            update_cache: true
+
+      - name: Create directory for Kubernetes apt key
         ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl
-            state: absent
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
 
-      - name: Delete checksum file from home directory
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
-            state: absent
+      - name: Check if Kubernetes apt key exists
+        ansible.builtin.stat:
+            path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        register: k8s_keyring
 
-      - name: Get latest kubectl version
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/release/stable.txt
-            return_content: true
-            status_code: 200, 304
-        register: version
+      - name: Download Kubernetes apt key
+        ansible.builtin.shell: |
+            curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        when: not k8s_keyring.stat.exists
 
-      - name: Download the latest kubectl release
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/release/{{ version.content }}/bin/linux/amd64/kubectl
-            dest: /home/{{ lookup('env', 'USER') }}
-            status_code: 200, 304
-        register: kubectl
+      - name: Add Kubernetes apt repository
+        ansible.builtin.shell: |
+            echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+        changed_when: false
 
-      - name: Download the kubectl checksum file
-        ansible.builtin.uri:
-            url: https://dl.k8s.io/{{ version.content }}/bin/linux/amd64/kubectl.sha256
-            dest: /home/{{ lookup('env', 'USER') }}
-            status_code: 200, 304
+      - name: Install kubelet, kubeadm and kubectl
+        ansible.builtin.apt:
+            pkg:
+                - kubelet
+                - kubeadm
+                - kubectl
+            state: present
+            update_cache: true
 
-      - name: Copy kubectl and change permissions
-        ansible.builtin.copy:
-            src: "{{ kubectl.path }}"
-            remote_src: true
-            dest: /usr/local/bin/kubectl
-            owner: root
-            group: root
-            mode: "+x"
+      - name: Hold Kubernetes packages
+        ansible.builtin.shell: |
+            apt-mark hold kubelet kubeadm kubectl
+        changed_when: false
 
-      - name: Check if kubectl is installed
+      - name: Ensure kubelet is enabled and started
+        ansible.builtin.systemd:
+            name: kubelet
+            enabled: true
+            state: started
+
+- name: Initialize Kubernetes Cluster on Master
+  hosts: master
+  become: true
+  tasks:
+      - name: Initialize the cluster
         ansible.builtin.command:
-            cmd: kubectl version --client
-        register: client
-        failed_when: client.rc > 1
-        changed_when: client.rc != 0
+            cmd: kubeadm init --cri-socket=unix:///var/run/cri-dockerd.sock --pod-network-cidr=10.244.0.0/16
+        register: kubeadm_init
+        changed_when: "'Your Kubernetes control-plane has initialized successfully!' in kubeadm_init.stdout"
+        failed_when: kubeadm_init.rc != 0 and 'already exists' not in kubeadm_init.stderr
 
-      - name: Remove downloaded binaries from home
+      - name: Create .kube directory
         ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl
-            state: absent
+            path: "/home/{{ ansible_user }}/.kube"
+            state: directory
+            mode: "0755"
+            owner: "{{ ansible_user }}"
 
-      - name: Remove downloaded checksums from home
-        ansible.builtin.file:
-            path: /home/{{ lookup('env', 'USER') }}/kubectl.sha256
-            state: absent
+      - name: Copy admin.conf to user's kube config
+        ansible.builtin.copy:
+            src: /etc/kubernetes/admin.conf
+            dest: "/home/{{ ansible_user }}/.kube/config"
+            remote_src: true
+            owner: "{{ ansible_user }}"
+            mode: "0600"
+
+      - name: Install Flannel CNI
+        ansible.builtin.command:
+            cmd: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+        become: false
+        changed_when: false
+
+      - name: Get join command
+        ansible.builtin.command: kubeadm token create --print-join-command
+        register: join_command
+        changed_when: false
+
+- name: Join Worker Nodes to Cluster
+  hosts: workers
+  become: true
+  tasks:
+      - name: Join cluster
+        ansible.builtin.command:
+            cmd: "{{ hostvars[groups['master'][0]]['join_command']['stdout'] }} --cri-socket=unix:///var/run/cri-dockerd.sock"
+        register: kubeadm_join
+        changed_when: "'This node has joined the cluster' in kubeadm_join.stdout"
+        failed_when: kubeadm_join.rc != 0 and 'already exists' not in kubeadm_join.stderr
 
 - name: Install and Configure CockroachDB Cluster
   hosts: cockroachdb
@@ -452,3 +585,25 @@
             state: restarted
             enabled: true
         listen: "Restart rabbitmq-server"
+
+- name: Deploy EvOC Microservices
+  hosts: master
+  become: false
+  tasks:
+      - name: Create kubernetes manifests directory on master
+        ansible.builtin.file:
+            path: "~/kubernetes"
+            state: directory
+            mode: "0755"
+
+      - name: Copy Kubernetes manifests to master
+        ansible.builtin.copy:
+            src: ../kubernetes/
+            dest: "~/kubernetes/"
+            mode: "0644"
+
+      - name: Apply Kubernetes manifests
+        ansible.builtin.command:
+            cmd: "kubectl apply -f ~/kubernetes/"
+        register: deploy_result
+        changed_when: "'created' in deploy_result.stdout or 'configured' in deploy_result.stdout"

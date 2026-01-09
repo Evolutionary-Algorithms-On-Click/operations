@@ -2,7 +2,7 @@
 
 Welcome to the **operations** repository for **EvOC (Evolutionary Algorithms on Click)**. This repository contains all the configuration files, automation scripts, and deployment manifests required to set up and manage the EvOC infrastructure across different environments.
 
-## 🚀 Overview
+## Overview
 
 This repository is designed to automate the deployment of the EvOC microservices architecture. It supports a robust, production-ready environment using Kubernetes and Ansible, while maintaining a simple Docker Compose setup for local development.
 
@@ -15,7 +15,7 @@ This repository is designed to automate the deployment of the EvOC microservices
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 | Directory | Description |
 |-----------|-------------|
@@ -25,7 +25,7 @@ This repository is designed to automate the deployment of the EvOC microservices
 
 ---
 
-## 🛠 Prerequisites
+## Prerequisites
 
 Before starting, ensure you have the following tools installed on your local machine:
 - [Ansible CLI](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
@@ -34,7 +34,7 @@ Before starting, ensure you have the following tools installed on your local mac
 
 ---
 
-## 🏗 Quick Start
+## Quick Start
 
 ### 1. Local Development (Docker Compose)
 For a quick local setup, navigate to the `docker` directory and follow the instructions in its README.
@@ -55,7 +55,7 @@ ansible-playbook -i inventory.ini playbook.yaml -kK
 
 ---
 
-## 🛡 Security & Secrets
+## Security & Secrets
 
 Sensitive information (API keys, database credentials) are managed via:
 - **Ansible Vars**: Stored in `ansible/vars/` (excluded from Git).
@@ -65,7 +65,7 @@ Sensitive information (API keys, database credentials) are managed via:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 Please follow the standard Git workflow:
 1. Fork the repo.
 2. Create your feature branch (`git checkout -b feature/amazing-feature`).

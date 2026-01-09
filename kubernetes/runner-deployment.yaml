@@ -43,13 +43,13 @@ spec:
                 secretKeyRef:
                   name: evolve-secrets
                   key: minio-secret-key
-            - name: RABBITMQ_URL
+            - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
                   name: evolve-secrets
-                  key: rabbitmq-url
-            - name: RABBITMQ_QUEUE
+                  key: redis-url
+            - name: REDIS_QUEUE_NAME
               valueFrom:
                 secretKeyRef:
                   name: evolve-secrets
-                  key: rabbitmq-queue-name
+                  key: redis-queue-name

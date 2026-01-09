@@ -593,30 +593,41 @@
             state: restarted
             enabled: true
 
-- name: Install RabbitMQ using Shell Script and Restart via Handler
-  hosts: rabbitmq
+- name: Install and Configure Redis
+  hosts: redis
   become: true
-  vars:
-      install_script_local_path: "scripts/install-rabbitmq.sh"
-
   tasks:
-      - name: Run the RabbitMQ installation script
-        ansible.builtin.script: "{{ install_script_local_path }}"
-        args:
-            creates: /etc/apt/sources.list.d/rabbitmq.list
-        register: script_execution_result
-        changed_when: >
-            '0 upgraded, 0 newly installed' not in script_execution_result.stdout and
-            'Setting up rabbitmq-server' in script_execution_result.stdout
-        notify: Restart rabbitmq-server
+      - name: Install redis-server
+        ansible.builtin.apt:
+            name: redis-server
+            state: present
+            update_cache: true
+
+      - name: Allow Redis to listen on all interfaces
+        ansible.builtin.lineinfile:
+            path: /etc/redis/redis.conf
+            regexp: '^bind '
+            line: 'bind 0.0.0.0'
+        notify: Restart redis-server
+
+      - name: Disable protected mode
+        ansible.builtin.lineinfile:
+            path: /etc/redis/redis.conf
+            regexp: '^protected-mode '
+            line: 'protected-mode no'
+        notify: Restart redis-server
+
+      - name: Ensure Redis is enabled and started
+        ansible.builtin.systemd:
+            name: redis-server
+            enabled: true
+            state: started
 
   handlers:
-      - name: Restart rabbitmq-server
+      - name: Restart redis-server
         ansible.builtin.systemd:
-            name: rabbitmq-server
+            name: redis-server
             state: restarted
-            enabled: true
-        listen: "Restart rabbitmq-server"
 
 - name: Deploy EvOC Microservices
   hosts: master

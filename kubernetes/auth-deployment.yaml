@@ -56,6 +56,16 @@ spec:
                 secretKeyRef:
                   name: evolve-secrets
                   key: auth-grpc-port
+            - name: ENV
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: env
+            - name: INIT_DB
+              valueFrom:
+                secretKeyRef:
+                  name: evolve-secrets
+                  key: init-db-flag
 ---
 apiVersion: v1
 kind: Service

@@ -1,22 +1,25 @@
-# Deploy EvOC on Infrastructure
+# 🤖 Automated Deployment with Ansible
 
-# Requirements
+This directory contains the automation logic to provision target servers from scratch, configure a multi-node Kubernetes cluster, and deploy all EvOC infrastructure components.
 
--   `Ansible CLI` installed
--   `SSH sudo access` to the target server
+## 🛠 Prerequisites
 
-# Configure Hosts
+- **Ansible 2.10+** installed locally.
+- **Ubuntu 22.04 / 24.04** on target servers (Recommended).
+- **SSH access** with sudo privileges on all nodes.
 
-In the inventory file, specify the target server's IP address or hostname under the `[master]` and `[worker]` group. Also, specify the SSH user that has sudo access to the target server.
+---
+
+## ⚙️ Configuration
+
+### 1. Inventory Setup
+Edit `inventory.ini` to define your cluster topology.
 
 ```ini
-# Define all unique hosts and their
-# connection details ONCE using logical names.
-
 [nodes]
-master-node  ansible_host=<your_master_node_ip>
-worker-node1 ansible_host=<your_worker_node1_ip>
-worker-node2 ansible_host=<your_worker_node2_ip>
+master-node  ansible_host=1.2.3.4
+worker-node1 ansible_host=1.2.3.5
+worker-node2 ansible_host=1.2.3.6
 
 [master]
 master-node
@@ -25,51 +28,59 @@ master-node
 worker-node1
 worker-node2
 
-[cockroachdb]
-worker-node1
-worker-node2
-
-# ------IMPORTANT---------
-# Exactly one node only
-# should be used for MinIO.
-[minio]
-worker-node2
-
-# ------IMPORTANT---------
-# Exactly one node only
-# should be used for RabbitMQ.
-[rabbitmq]
-worker-node3
-
-[all:children]
-master
-workers
-
 [all:vars]
-ansible_user=<your_ssh_user>
+ansible_user=ubuntu
 ```
 
-# CockroachDB License Key
+### 2. Variable Configuration
+Create the following secret files in `ansible/vars/` (these are ignored by Git):
 
-Get a cockroachdb enterprise-free license key by declaring usage of cockroachdb for `academic research` as that's the goal of this project. You can get the license key from the [CockroachDB docs](https://www.cockroachlabs.com/docs/stable/licensing-faqs). After that, create a file in path `ansible/vars/crdb_secrets.yml` and paste the license key in the file. The file should look like this:
-
-```yml
-crdb_enterprise_license_key: "<<YOUR_LICENSE_KEY>>"
+#### `ansible/vars/crdb_secrets.yml`
+```yaml
+crdb_enterprise_license_key: "YOUR_LICENSE_KEY_HERE"
 ```
 
-# Minio Config
-
-To use Minio as the object storage for EvOC, you need to create a file in path `ansible/vars/minio_secrets.yml` and paste the access key and secret key in the file. The file should look like this:
-
-```yml
-minio_root_user: "<username>"
-minio_root_password: "<password>"
+#### `ansible/vars/minio_secrets.yml`
+```yaml
+minio_root_user: "admin"
+minio_root_password: "a-very-secure-password"
 ```
 
-# Execute the Playbook
+---
 
-Run the following command to execute the playbook from the `ansible` directory on your local machine. It will prompt for the SSH password and the sudo password for the target server. Do provide the correct passwords when prompted.
+## 🚀 Execution
+
+Run the deployment from the root or `ansible` directory:
 
 ```bash
-ansible-playbook -i inventory.ini playbook.yml -kK
+ansible-playbook -i inventory.ini playbook.yaml -kK
 ```
+
+### What This Playbook Does:
+1.  **System Preparation**: Disables swap, configures kernel modules (`overlay`, `br_netfilter`), and sets sysctl parameters.
+2.  **Container Runtime**: Installs Docker and the `cri-dockerd` (v0.3.21) bridge to enable Kubernetes-Docker compatibility.
+3.  **Kubernetes Stack**: Installs `kubeadm`, `kubelet`, and `kubectl` (v1.31).
+4.  **Cluster Lifecycle**:
+    - Initializes the Master node.
+    - Generates and shares join tokens dynamically with Workers.
+    - Installs **Flannel CNI** for cross-node networking.
+5.  **Infrastructure**: Provisions **CockroachDB** (Multi-node), **MinIO**, and **RabbitMQ**.
+6.  **Application**: Automatically copies and applies all manifests from the `/kubernetes` directory.
+
+---
+
+## 🧩 Advanced Features
+
+### 🔌 CRI-Dockerd Integration
+As Kubernetes has deprecated direct Docker support, this playbook integrates **`cri-dockerd`**. This shim allows you to continue using the Docker Engine as the container runtime while maintaining full compatibility with the Kubernetes CRI.
+
+### 💻 Multi-Architecture Support
+The playbook automatically detects the processor architecture of your nodes. Whether you are running on **x86_64 (Intel/AMD)** or **aarch64 (ARM/Apple Silicon)**, the correct binaries (Docker, CRDB, MinIO) will be downloaded and installed.
+
+---
+
+## 🔍 Troubleshooting
+
+- **CRI Socket**: If `kubelet` fails to start, verify the socket exists: `ls /var/run/cri-dockerd.sock`.
+- **Node Status**: Check cluster health: `kubectl get nodes`.
+- **Logs**: View service logs on nodes: `journalctl -u cri-docker`.

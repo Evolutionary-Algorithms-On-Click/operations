@@ -1,53 +1,60 @@
-# STEPS TO RUN
+# Evolve-on-Click (EvOC) Full Stack Deployment
 
-1. Make sure you have `docker` in your system.
+This directory contains the master `docker-compose.yml` file to deploy the entire EvOC application stack.
 
-2. Get the [`docker-compose.yml`](./docker-compose.yml) file.
+## Overview
 
-3. Create a `.env` file in the same folder.
+The `docker-compose.yml` is configured to run all microservices, databases, and the frontend in a production-like environment. It uses pre-built Docker images from the [Evolutionary-Algorithms-On-Click GitHub Container Registry](https://github.com/orgs/Evolutionary-Algorithms-On-Click/packages).
 
-4. Set the env secrets.
+The stack includes:
+- `evolve_frontend`: The Next.js web application.
+- `controller_v2`: The primary backend Go microservice.
+- `auth`: The user authentication microservice.
+- `llm_service`: The AI microservice for code generation.
+- `jupyter_gateway` & `python_runner`: For executing notebook code.
+- `runner_controller` & `runner`: For handling asynchronous background jobs.
+- `cockroachdb`: The SQL database.
+- `minio`: The S3-compatible object store.
+- `redis`: The in-memory cache and message broker.
 
-```.env
-MINIO_ENDPOINT = host.docker.internal:9000
-MINIO_ACCESS_KEY = <minio-access-key>
-MINIO_SECRET_KEY = <minio-secret-key>
+## Prerequisites
 
-COCKROACHDB_URL = postgresql://root@host.docker.internal:26257/defaultdb?sslmode=disable
-MAILER_EMAIL = <mailer-email>
-MAILER_PASSWORD = <mailer-password>
-FRONTEND_URL = http://host.docker.internal:3000
-AUTH_HTTP_PORT = 5000
-AUTH_GRPC_PORT = 5001
-REDIS_URL= redis://host.docker.internal:6379/0
-REDIS_QUEUE_NAME = <task_queue_name>
-RUNNER_CONTROLLER_HTTP_PORT = 5002
-AUTH_GRPC_ADDRESS = host.docker.internal:5001
-INIT_DB_FLAG = true
+1.  **Docker and Docker Compose**: Ensure you have a recent version of Docker installed on your system.
+2.  **Container Images**: All required container images must be built and pushed to the organization's GitHub Container Registry (`ghcr.io`). The compose file will pull these images.
 
-JUPYTER_GATEWAY_URL = "http://jupyter_gateway:8888"
-JUPYTER_AUTH_TOKEN = "YOUR_SECRET_TOKEN"
-CULL_INTERVAL_MINUTES = 10
-IDLE_THRESHOLD_MINUTES = 30
-AUTH_GRPC_SERVER_ADDRESS = "auth:5001"
+## Setup
 
-NEXT_PUBLIC_BACKEND_BASE_URL=http://localhost:5002
-NEXT_PUBLIC_V2_BACKEND_BASE_URL=http://localhost:8080
-NEXT_PUBLIC_AUTH_BASE_URL=http://localhost:5000
-NEXT_PUBLIC_MINIO_BASE_URL=http://localhost:9000
-# Set to true and paste token if you want to use AI features.
-NEXT_PUBLIC_AI=false
-GOOGLE_GENERATIVE_AI_API_KEY=<gemini-api-key>
+1.  **Create an Environment File**: This stack requires a number of environment variables and secrets to run. A template is provided in this directory. Copy the example file to a new `.env` file:
+    ```bash
+    cp .env.example .env
+    ```
+
+2.  **Configure Secrets**: Open the `.env` file and fill in all the required values, such as the `GROQ_API_KEY`, mailer passwords, and any other secrets.
+
+## Running the Stack
+
+Once your `.env` file is configured, you can start the entire application stack in detached mode:
+
+```bash
+docker compose up -d
 ```
 
-5. Run docker compose to start all containers
+This command will pull all the necessary images and start the services. You can view the logs for all running services with:
 
-```docker
-docker compose up
+```bash
+docker compose logs -f
 ```
 
-6. To stop all containers, Run
+## Stopping the Stack
 
-```docker
+To stop and remove all the running containers, use the following command:
+
+```bash
 docker compose down
+```
+
+To stop the containers without removing the underlying volumes (preserving your database and minio data), you can use:
+
+```bash
+docker compose stop
 ```

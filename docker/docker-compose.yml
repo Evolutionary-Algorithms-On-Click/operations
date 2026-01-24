@@ -109,7 +109,7 @@ services:
       - evoc-net
 
   controller_v2:
-    image: ghcr.io/evolutionary-algorithms-on-click/controller_v2:latest
+    image: ghcr.io/evolutionary-algorithms-on-click/controller_microservice_v2:latest
     container_name: controller_v2
     ports:
       - "8080:8080"
@@ -121,15 +121,18 @@ services:
       CULL_INTERVAL_MINUTES: 10
       IDLE_THRESHOLD_MINUTES: 30
       AUTH_GRPC_SERVER_ADDRESS: "auth:5001"
+      LLM_MICROSERVICE_URL: "http://llm_service:8000"
     networks:
       - evoc-net
     depends_on:
       cockroachdb:
-        condition: service_started # Ensure DB is ready
+        condition: service_started
       jupyter_gateway:
         condition: service_started
       minio:
         condition: service_started
+      llm_service:
+        condition: service_healthy
     pull_policy: always
 
   jupyter_gateway:
@@ -185,18 +188,8 @@ services:
     image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
     container_name: evolve_frontend
     depends_on:
-      cockroachdb:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      auth:
-        condition: service_healthy
-      runner_controller:
-        condition: service_healthy
-      controller_v2:
-        condition: service_started
-      runner:
-        condition: service_started
+      - controller_v2
+      - auth
     environment:
       NEXT_PUBLIC_BACKEND_BASE_URL: ${NEXT_PUBLIC_BACKEND_BASE_URL}
       NEXT_PUBLIC_V2_BACKEND_BASE_URL: ${NEXT_PUBLIC_V2_BACKEND_BASE_URL}
@@ -214,12 +207,36 @@ services:
     pull_policy: always
     networks:
       - evoc-net
+      
+  llm_service:
+    image: ghcr.io/evolutionary-algorithms-on-click/evocv2_llm_microservice:latest
+    container_name: llm_service
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-llama-3.3-70b-versatile}
+      - MEM0_API_KEY=${MEM0_API_KEY:-}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - chroma_data:/tmp/chroma_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - evoc-net
 
 volumes:
   minio-data:
   cockroach-data:
+  chroma_data:
 
 networks:
   evoc-net:
     driver: bridge
-

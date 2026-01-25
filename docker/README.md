@@ -1,60 +1,84 @@
-# Evolve-on-Click (EvOC) Full Stack Deployment
+# Evolve-on-Click (EvOC) Full Stack Deployment & Development
 
-This directory contains the master `docker-compose.yml` file to deploy the entire EvOC application stack.
+This directory contains the master `docker-compose.yml`, developer-specific override files, and a `Makefile` to easily run the entire EvOC application stack.
 
-## Overview
+## Overview: A Hybrid Approach
 
-The `docker-compose.yml` is configured to run all microservices, databases, and the frontend in a production-like environment. It uses pre-built Docker images from the [Evolutionary-Algorithms-On-Click GitHub Container Registry](https://github.com/orgs/Evolutionary-Algorithms-On-Click/packages).
+This setup uses a `Makefile` to simplify a hybrid Docker Compose approach.
 
-The stack includes:
-- `evolve_frontend`: The Next.js web application.
-- `controller_v2`: The primary backend Go microservice.
-- `auth`: The user authentication microservice.
-- `llm_service`: The AI microservice for code generation.
-- `jupyter_gateway` & `python_runner`: For executing notebook code.
-- `runner_controller` & `runner`: For handling asynchronous background jobs.
-- `cockroachdb`: The SQL database.
-- `minio`: The S3-compatible object store.
-- `redis`: The in-memory cache and message broker.
+-   **`docker-compose.yml` (Base File)**: Defines the entire stack using stable, pre-built images from the GitHub Container Registry.
+-   **`docker-compose.<role>-dev.yml` (Override Files)**: Overrides a single service to build from local source code and enable live-reloading.
+-   **`Makefile`**: Provides simple commands (`make up-backend`, `make down`, etc.) to manage the environment.
 
 ## Prerequisites
 
-1.  **Docker and Docker Compose**: Ensure you have a recent version of Docker installed on your system.
-2.  **Container Images**: All required container images must be built and pushed to the organization's GitHub Container Registry (`ghcr.io`). The compose file will pull these images.
+1.  **Make, Docker, and Docker Compose**: Ensure you have these tools installed.
+2.  **Source Code**: You must have all project repositories (`controller_microservice_v2`, `evolve_frontend`, etc.) checked out in the same parent directory.
 
-## Setup
+## One-Time Setup
 
-1.  **Create an Environment File**: This stack requires a number of environment variables and secrets to run. A template is provided in this directory. Copy the example file to a new `.env` file:
+Before you can run any services, you must create and configure your environment file.
+
+1.  Navigate to this directory (`operations/docker`).
+2.  Copy the example environment file:
     ```bash
     cp .env.example .env
     ```
+3.  Open the `.env` file and fill in all required secrets (especially `GROQ_API_KEY`).
 
-2.  **Configure Secrets**: Open the `.env` file and fill in all the required values, such as the `GROQ_API_KEY`, mailer passwords, and any other secrets.
+---
 
-## Running the Stack
+## Development & Operations Guide
 
-Once your `.env` file is configured, you can start the entire application stack in detached mode:
+All commands should be run from this directory (`operations/docker`).
 
-```bash
-docker compose up -d
-```
+### How to Start
 
-This command will pull all the necessary images and start the services. You can view the logs for all running services with:
+Choose the command that matches your role:
 
-```bash
-docker compose logs -f
-```
+-   **For Backend Development (`controller_v2`):**
+    ```bash
+    make up-backend
+    ```
+    *(This starts the full stack with live-reloading for the Go backend using `Air`.)*
 
-## Stopping the Stack
+-   **For Frontend Development (`evolve_frontend`):**
+    ```bash
+    make up-frontend
+    ```
+    *(This starts the full stack with live-reloading for the Next.js frontend.)*
 
-To stop and remove all the running containers, use the following command:
+-   **For LLM Service Development (`llm_service`):**
+    ```bash
+    make up-llm
+    ```
+    *(This starts the full stack with live-reloading for the Python LLM service.)*
 
-```bash
-docker compose down
-```
+-   **For Running the Stable Stack (QA / Testing):**
+    ```bash
+    make up
+    ```
+    *(This pulls all pre-built images from the registry without using any local code.)*
 
-To stop the containers without removing the underlying volumes (preserving your database and minio data), you can use:
+### General Management Commands
 
-```bash
-docker compose stop
-```
+-   **Stop All Services:**
+    ```bash
+    make down
+    ```
+
+-   **Check Container Status:**
+    ```bash
+    make ps
+    ```
+
+-   **Follow Service Logs:**
+    ```bash
+    make logs service=<service_name>
+    ```
+    *Example: `make logs service=controller_v2`*
+
+-   **See All Commands:**
+    ```bash
+    make help
+    ```

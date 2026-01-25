@@ -109,7 +109,7 @@ services:
       - evoc-net
 
   controller_v2:
-    image: ghcr.io/evolutionary-algorithms-on-click/controller_microservice_v2:latest
+    image: ghcr.io/evolutionary-algorithms-on-click/controller_v2:latest
     container_name: controller_v2
     ports:
       - "8080:8080"
@@ -209,7 +209,7 @@ services:
       - evoc-net
       
   llm_service:
-    image: ghcr.io/evolutionary-algorithms-on-click/evocv2_llm_microservice:latest
+    image: ghcr.io/evolutionary-algorithms-on-click/llm_service:latest
     container_name: llm_service
     ports:
       - "${PORT:-8000}:8000"

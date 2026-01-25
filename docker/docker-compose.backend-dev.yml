@@ -1,0 +1,12 @@
+# docker-compose.backend-dev.yml
+# Overrides for Backend (controller_v2) development
+
+services:
+  controller_v2:
+    build:
+      context: ../../controller_microservice_v2
+      dockerfile: docker/controller_v2/Dockerfile
+    volumes:
+      - ../../controller_microservice_v2:/app
+    # The default command in the Dockerfile is `go run`, which works well for development
+    # by recompiling on file changes within the container.

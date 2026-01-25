@@ -1,0 +1,14 @@
+# docker-compose.llm-dev.yml
+# Overrides for LLM (llm_service) development
+
+services:
+  llm_service:
+    build:
+      context: ../../evocv2_llm_microservice
+      dockerfile: Dockerfile
+    volumes:
+      - ../../evocv2_llm_microservice:/app
+    # The default command in the Dockerfile is likely `uvicorn app.main:app`.
+    # For development, we can add the --reload flag.
+    # Note: If the base image's CMD is not uvicorn, you might need to specify the full command here.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

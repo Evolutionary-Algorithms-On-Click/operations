@@ -1,0 +1,16 @@
+# docker-compose.frontend-dev.yml
+# Overrides for Frontend (evolve_frontend) development
+
+services:
+  evolve_frontend:
+    build:
+      context: ../../evolve_frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount the source code, except for node_modules
+      - ../../evolve_frontend:/app
+      - /app/node_modules
+    # Run the Next.js development server
+    command: npm run dev

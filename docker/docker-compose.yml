@@ -16,21 +16,25 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+      - evoc-net
 
   cockroachdb:
-    image: cockroachdb/cockroach:v25.1.4
+    image: cockroachdb/cockroach:v25.4.0
     container_name: cockroachdb
     command: start-single-node --insecure
     ports:
       - "26257:26257"
-      - "8081:8080"
+      - "8082:8080"
     volumes:
-      - cockroach-data:/cockroach/cockroach-data
+      - cockroach-data-v3:/cockroach/cockroach-data
     healthcheck:
       test: ["CMD", "cockroach", "node", "status", "--insecure"]
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+      - evoc-net
 
   redis:
     image: redis:latest
@@ -42,6 +46,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+      - evoc-net
 
   auth:
     image: ghcr.io/evolutionary-algorithms-on-click/auth_microservice:latest
@@ -68,6 +74,8 @@ services:
       timeout: 5s
       retries: 5
     pull_policy: always
+    networks:
+      - evoc-net
 
   runner_controller:
     image: ghcr.io/evolutionary-algorithms-on-click/runner_controller_microservice:latest
@@ -97,6 +105,65 @@ services:
       timeout: 5s
       retries: 5
     pull_policy: always
+    networks:
+      - evoc-net
+
+  controller_v2:
+    image: ghcr.io/evolutionary-algorithms-on-click/controller_v2:latest
+    container_name: controller_v2
+    volumes:
+      - user_data:/mnt/user_data
+    ports:
+      - "5003:8080"
+    environment:
+      DATABASE_URL: "postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable"
+      APP_ENV: ${BACKEND_ENV}
+      JUPYTER_GATEWAY_URL: "http://jupyter_gateway:8888"
+      JUPYTER_AUTH_TOKEN: "YOUR_SECRET_TOKEN"
+      CULL_INTERVAL_MINUTES: 10
+      IDLE_THRESHOLD_MINUTES: 30
+      AUTH_GRPC_ADDRESS: "auth:5001"
+      LLM_MICROSERVICE_URL: "http://llm_service:5004"
+      VOLPE_SERVICE_URL: "http://host.docker.internal:7070"
+      USER_DATA_DIR: "/mnt/user_data"
+    networks:
+      - evoc-net
+    depends_on:
+      cockroachdb:
+        condition: service_started
+      jupyter_gateway:
+        condition: service_started
+      minio:
+        condition: service_started
+      llm_service:
+        condition: service_healthy
+    pull_policy: always
+
+  jupyter_gateway:
+    image: ghcr.io/evolutionary-algorithms-on-click/jupyter_gateway:latest
+    container_name: jupyter_gateway
+    volumes:
+      - user_data:/mnt/user_data
+    environment:
+      KG_AUTH_TOKEN: 'YOUR_SECRET_TOKEN'
+      KG_ALLOW_ORIGIN: '*'
+      KG_IP: '0.0.0.0'
+      KG_PORT: 8888
+    ports:
+      - "8888:8888"
+    networks:
+      - evoc-net
+    depends_on:
+      python_runner:
+        condition: service_started
+    pull_policy: always
+
+  python_runner:
+    image: ghcr.io/evolutionary-algorithms-on-click/python_runner:latest
+    container_name: python_runner
+    networks:
+      - evoc-net
+    pull_policy: always
 
   runner:
     image: ghcr.io/evolutionary-algorithms-on-click/runner:latest
@@ -108,6 +175,8 @@ services:
         condition: service_healthy
       runner_controller:
         condition: service_healthy
+      controller_v2:
+        condition: service_started
       redis:
         condition: service_healthy
     environment:
@@ -118,36 +187,63 @@ services:
       REDIS_URL: ${REDIS_URL}
       REDIS_QUEUE_NAME: ${REDIS_QUEUE_NAME}
     pull_policy: always
+    networks:
+      - evoc-net
 
   evolve_frontend:
     image: ghcr.io/evolutionary-algorithms-on-click/evolve_frontend:latest
     container_name: evolve_frontend
     depends_on:
-      cockroachdb:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      auth:
-        condition: service_healthy
-      runner_controller:
-        condition: service_healthy
-      runner:
-        condition: service_started
+      - controller_v2
+      - auth
     environment:
       NEXT_PUBLIC_BACKEND_BASE_URL: ${NEXT_PUBLIC_BACKEND_BASE_URL}
+      NEXT_PUBLIC_V2_BACKEND_BASE_URL: ${NEXT_PUBLIC_V2_BACKEND_BASE_URL}
       NEXT_PUBLIC_AUTH_BASE_URL: ${NEXT_PUBLIC_AUTH_BASE_URL}
       NEXT_PUBLIC_MINIO_BASE_URL: ${NEXT_PUBLIC_MINIO_BASE_URL}
       NEXT_PUBLIC_AI: ${NEXT_PUBLIC_AI}
       GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY}
     ports:
-      - "3000:3000"
+      - "3001:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 15s
       timeout: 5s
       retries: 5
     pull_policy: always
+    networks:
+      - evoc-net
+      
+  llm_service:
+    image: ghcr.io/evolutionary-algorithms-on-click/llm_service:sha-5684471
+    container_name: llm_service
+    ports:
+      - "${PORT:-5004}:5004"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-llama-3.3-70b-versatile}
+      - MEM0_API_KEY=${MEM0_API_KEY:-}
+      - HOST=0.0.0.0
+      - PORT=5004
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - chroma_data:/tmp/chroma_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:5004/health\")'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - evoc-net
 
 volumes:
   minio-data:
-  cockroach-data:
+  cockroach-data-v3:
+  chroma_data:
+  user_data:
+
+networks:
+  evoc-net:
+    driver: bridge
